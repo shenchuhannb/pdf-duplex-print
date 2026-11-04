@@ -6,6 +6,7 @@
 """
 
 import ctypes
+import logging
 import os
 import queue
 import shutil
@@ -54,6 +55,8 @@ from window_geometry import (
 )
 import theme as _theme
 from app_identity import apply_window_icon
+
+_logger = logging.getLogger("pdf_duplex")
 
 try:
     import tkinterdnd2 as _tkdnd
@@ -4876,6 +4879,8 @@ class DuplexPrintApp:
     def _append_log(self, text: str) -> None:
         if not text:
             return
+        # 同步落盘（handler 未安装时为标准库空操作），便于打印失败后排查
+        _logger.info(text.rstrip())
         stamp = time.strftime("%H:%M:%S")
         try:
             self.log_text.configure(state="normal")
@@ -5111,6 +5116,9 @@ class DuplexPrintApp:
             if self.current_job_id:
                 cancel_job(self.current_printer(), self.current_job_id)
             self.worker.join(timeout=3.0)
+            if self.worker.is_alive():
+                # daemon 线程会在进程退出时被强制结束，但留下记录便于排查卡死原因
+                _logger.warning("退出时打印线程未能在 3 秒内结束，将由 daemon 兜底终止")
         self.shutting_down = True
         if self.preview_after_id is not None:
             try:

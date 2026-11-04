@@ -138,6 +138,8 @@ def build_range_pdf(src_path: str, abs_pages: List[int], out_path: str) -> Tuple
 
         out.save(out_path, garbage=3, deflate=True)
         return total, added_blank
+    except ToolError:
+        raise
     except Exception as exc:
         raise PdfError(f"处理 PDF 页面时出错（文件可能损坏或不支持）：\n{src_path}\n{exc}") from exc
     finally:
@@ -352,18 +354,6 @@ def compute_single_sided_orders(
     return list(reversed(order)) if reverse else order
 
 
-def preview_plan(selected_count: int, copies: int) -> Tuple[int, bool, List[int], List[int]]:
-    """根据选定页数推演手动双面打印计划（不含 N-up / 小册子）。
-
-    返回 (补页后总页数, 是否补空白页, 阶段一顺序, 阶段二顺序)。
-    """
-    if selected_count < 1:
-        raise PdfError("选定范围至少需要 1 页。")
-    total = selected_count + (selected_count % 2)
-    odd_order, even_order = compute_print_orders(total, max(1, copies))
-    return total, total != selected_count, odd_order, even_order
-
-
 # ----------------------------------------------------------------------------
 # 打印范围模式 → 绝对页码
 # ----------------------------------------------------------------------------
@@ -422,10 +412,12 @@ class LayoutOptions:
     nup_border: bool = False
     page_order: str = "row"           # row（从左到右）/ column（从上到下）
     booklet: bool = False
-    margin_left_mm: float = 10.0
-    margin_top_mm: float = 10.0
-    margin_right_mm: float = 10.0
-    margin_bottom_mm: float = 8.0
+    # 默认 0：与 settings_store 默认及 Acrobat“直接打印”口径一致——
+    # 只在驱动返回的可打印区域内按需收缩，不额外加白边。
+    margin_left_mm: float = 0.0
+    margin_top_mm: float = 0.0
+    margin_right_mm: float = 0.0
+    margin_bottom_mm: float = 0.0
     # 驱动返回的可打印区域内缩（点，左/上/右/下）；None 表示未知。
     # 排版时与用户页边距取最大值，保证内容永远不会落到打印机的不可打印区，
     # 这也是 Acrobat“收缩到可打印区”的实际口径。
@@ -669,11 +661,12 @@ def preview_metrics(
 # ----------------------------------------------------------------------------
 # 版式计划（N-up / 小册子 / 双面补页）
 # ----------------------------------------------------------------------------
-def plan_nup_sides(count: int, nup: int, page_order: str = "row") -> List[List[Optional[int]]]:
+def plan_nup_sides(count: int, nup: int) -> List[List[Optional[int]]]:
     """把源页序分配到 N-up 输出面。
 
     返回每个输出面上放置的源页序号（1 基），空白槽位为 None。
     最后一个面不足 N 页时用 None 补齐，保证槽位数量固定。
+    注：槽位本身的行列顺序由 slot_rects 依据 page_order 决定，与这里无关。
     """
     nup = max(1, int(nup))
     pages: List[Optional[int]] = list(range(1, count + 1))
@@ -776,7 +769,7 @@ def build_layout_plan(
     if options.booklet:
         sides = plan_booklet_sides(padded)
     elif options.nup > 1:
-        sides = plan_nup_sides(padded, options.nup, options.page_order)
+        sides = plan_nup_sides(padded, options.nup)
     else:
         sides = [[i] for i in range(1, padded + 1)]
 
@@ -995,10 +988,3 @@ def compose_layout_pdf(
     finally:
         out.close()
         src.close()
-
-
-# 兼容旧调用（skip_blank 由 LayoutOptions 字段控制）
-def poster_columns(paper_w: float, paper_h: float, poster: int) -> Tuple[int, int]:
-    """海报打印（N×N 放大）的网格，预留接口；当前界面未开放。"""
-    poster = max(1, int(poster))
-    return poster, poster

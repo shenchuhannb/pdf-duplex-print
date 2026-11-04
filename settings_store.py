@@ -217,7 +217,8 @@ def _sanitize(data: Dict[str, Any]) -> Dict[str, Any]:
             result[key] = str(value)
         elif isinstance(default, list):
             if isinstance(value, list):
-                result[key] = [str(item) for item in value][:20]
+                # 与 add_recent 的 limit 保持一致，避免读入比写出更宽松
+                result[key] = [str(item) for item in value][:10]
     # 非法 print_flow 字符串在通用循环里会被原样保留，这里再校正一次枚举。
     result["print_flow"] = migrate_print_flow(data)
     return result

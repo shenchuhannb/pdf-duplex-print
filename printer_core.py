@@ -9,13 +9,17 @@
 """
 
 import ctypes
+import logging
 import math
 import os
+import re
 import threading
 import time
 from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
+
+_logger = logging.getLogger("pdf_duplex")
 
 try:
     import win32print  # pywin32
@@ -242,6 +246,9 @@ def _job_status_flags(job: dict) -> int:
     if isinstance(status, int):
         return status
     text = f"{status or ''} {job.get('pStatus') or ''}".lower()
+    # 单词按词匹配，避免厂商自定义状态文本的子串误判（如 "...error..." 类提示语）；
+    # 双词短语仍按子串匹配（分词后无法直接比较）。
+    words = set(re.findall(r"[a-z]+", text))
     flags = 0
     mapping = (
         ("printing", win32print.JOB_STATUS_PRINTING),
@@ -256,7 +263,7 @@ def _job_status_flags(job: dict) -> int:
         ("blocked", win32print.JOB_STATUS_BLOCKED_DEVQ),
     )
     for key, value in mapping:
-        if key in text:
+        if (" " in key and key in text) or (" " not in key and key in words):
             flags |= value
     return flags
 
@@ -308,6 +315,10 @@ def _render_page(page, dpi: int, annots: bool = True):
     height_px = page.rect.height * scale
     if width_px * height_px > MAX_RENDER_PIXELS:
         scale *= math.sqrt(MAX_RENDER_PIXELS / (width_px * height_px))
+        # 用户可能拿到比预期模糊的输出，必须在日志里留下原因
+        _logger.warning(
+            "页面位图超过 %d 万像素上限，已自动降采样（等效约 %.0f DPI），输出清晰度会下降",
+            MAX_RENDER_PIXELS // 1_000_000, scale * 72)
     matrix = fitz.Matrix(scale, scale)
     return page.get_pixmap(matrix=matrix, colorspace=fitz.csRGB, alpha=False, annots=annots)
 
@@ -588,6 +599,7 @@ def wait_for_print_job(
     last_log = 0.0
     paused_hint_logged = False
     open_failures = 0
+    get_job_failures = 0
     while True:
         if stop_event.is_set():
             return False
@@ -635,7 +647,17 @@ def wait_for_print_job(
             try:
                 job = win32print.GetJob(handle, job_id, 2)
             except Exception:
-                return True
+                # 任务消失通常意味着已出纸完成；但瞬时的 RPC/权限故障（安全软件
+                # 拦截等）同样会让 GetJob 抛异常。连续多次失败才判定“任务已出队列”，
+                # 避免误判完成而提前提示翻面，导致整批正反错位。
+                get_job_failures += 1
+                if get_job_failures >= 3:
+                    _logger.warning("GetJob 连续 %d 次失败，判定任务已出队列（视为完成）",
+                                    get_job_failures)
+                    return True
+                time.sleep(JOB_POLL_INTERVAL)
+                continue
+            get_job_failures = 0
 
             flags = _job_status_flags(job)
             if flags & getattr(win32print, "JOB_STATUS_OFFLINE", 0):

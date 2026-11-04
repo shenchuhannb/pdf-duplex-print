@@ -22,31 +22,13 @@ import time
 import tkinter as tk
 from tkinter import messagebox
 
-# 重新导出历史 API，保证旧脚本/测试继续可用 --------------------------------
-from core_utils import (  # noqa: F401
-    CancelledByUser, PdfError, PrintError, PrinterOfflineError, PrintTimeoutError,
-    SettingsError, ToolError, format_page_list, is_pdf_path, mm_to_pt, parse_page_range,
-    pt_to_mm, split_drop_data,
-)
-from pdf_layout import (  # noqa: F401
-    CUSTOM_PAPER_NAME, NUP_CHOICES, PAPER_SIZES_MM, LayoutOptions, LayoutPlan,
-    append_blank_page_like, build_layout_plan, build_range_pdf, compose_layout_pdf,
-    compute_duplex_orders, compute_merged_duplex_orders, compute_merged_per_copy_orders,
-    compute_print_orders, compute_single_sided_orders, describe_plan, get_pdf_page_count,
-    merge_layout_pdfs, merged_side_ranges, merged_sheet_count, open_pdf, page_is_blank,
-    plan_batch_summary, preview_plan, resolve_range_pages,
-)
-from printer_core import (  # noqa: F401
-    GdiPrinter, PrinterOptions, cancel_job, check_printer_ready, devmode_field_updates,
-    get_default_printer, get_printer_sources, get_printer_status, list_printers,
-    open_directory, set_job_paused, wait_for_print_job,
-)
 from ui_main import APP_TITLE, DuplexPrintApp, _create_root  # noqa: F401
 
 import app_identity as _identity
 import printer_core as _printer_core
 import pdf_layout as _pdf_layout
 import theme as _theme
+from log_setup import get_logger
 
 
 def _check_dependencies() -> bool:
@@ -140,6 +122,9 @@ def _self_check(root, args, app) -> None:
 
 
 def main(argv=None) -> None:
+    # 日志落盘（%APPDATA%\PDFDuplexPrint\logs\app.log），便于打印失败后排查
+    get_logger()
+
     # 任务栏图标/分组：必须在创建 Tk 窗口之前给进程设置显式 AppUserModelID，
     # 否则 pythonw.exe 启动时任务栏会沿用宿主进程的 python 图标。
     _identity.set_process_app_user_model_id()

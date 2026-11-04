@@ -1,0 +1,22 @@
+# 虚拟环境与解释器产物
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# 测试/运行缓存
+.pytest_cache/
+.screenshots/
+
+# 打包产物
+build/
+dist/
+*.spec
+
+# 用户文档（误放入项目的个人文件）
+*.docx
+*.doc
+
+# 系统文件
+Thumbs.db
+Desktop.ini

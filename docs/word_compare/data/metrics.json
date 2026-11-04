@@ -1,0 +1,2295 @@
+{
+  "01_mixed_short": {
+    "name": "01_mixed_short.docx",
+    "pages": 1,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "微软雅黑"
+    ],
+    "A": {
+      "text": {
+        "pdf_chars": 314,
+        "source_chars": 314,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 1.0,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDHEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDIEE+TimesNewRomanPSMT": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDJEE+TimesNewRomanPSMT": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDKEE+MicrosoftYaHei": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDLEE+MicrosoftYaHei": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 314,
+        "pages": 1
+      },
+      "sampled_text": "中英文混排短文档 / Mixed Chinese-English Short \nDocument \n本文档用于验证 Word 转 PDF 再打印时中文与英文的排版是否一致。段落中同时出现汉\n字、拉丁字母、数字与标点：The quick brown fox jumps over the lazy dog. 温度 \n25°C，版本 v2.1.3，编号 A-2026-1104。 \n第二段使用 Times New Roman 11pt：Font substitution may change glyph shapes; kerning \nand line spacing can drift after"
+    },
+    "B": {
+      "text": {
+        "pdf_chars": 314,
+        "source_chars": 314,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 1.0,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDHEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDIEE+TimesNewRomanPSMT": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDJEE+TimesNewRomanPSMT": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDKEE+MicrosoftYaHei": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDLEE+MicrosoftYaHei": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 314,
+        "pages": 1
+      },
+      "sampled_text": "中英文混排短文档 / Mixed Chinese-English Short \nDocument \n本文档用于验证 Word 转 PDF 再打印时中文与英文的排版是否一致。段落中同时出现汉\n字、拉丁字母、数字与标点：The quick brown fox jumps over the lazy dog. 温度 \n25°C，版本 v2.1.3，编号 A-2026-1104。 \n第二段使用 Times New Roman 11pt：Font substitution may change glyph shapes; kerning \nand line spacing can drift after"
+    },
+    "diff_convert": {
+      "pages_compared": 1,
+      "mean_diff_ratio": 0.0,
+      "max_diff_ratio": 0.0,
+      "max_page": 1,
+      "per_page": [
+        0.0
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "diff_print": {
+      "pages_compared": 1,
+      "mean_diff_ratio": 0.03808,
+      "max_diff_ratio": 0.03808,
+      "max_page": 1,
+      "per_page": [
+        0.03808
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "printA": {
+      "pages": 2,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 2
+    },
+    "printB": {
+      "pages": 1,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 1
+    },
+    "text_identical": true
+  },
+  "02_chinese_pure": {
+    "name": "02_chinese_pure.docx",
+    "pages": 2,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "楷体",
+      "黑体"
+    ],
+    "A": {
+      "text": {
+        "pdf_chars": 1380,
+        "source_chars": 1380,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 1.0,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDGEE+SimHei": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              2
+            ]
+          },
+          "BCDHEE+SimHei": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              2
+            ]
+          },
+          "BCDIEE+KaiTi": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              2
+            ]
+          },
+          "BCDJEE+KaiTi": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              2
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 1380,
+        "pages": 2
+      },
+      "sampled_text": "纯中文技术说明 \n第1 节：本软件在打印 Word 文档前，会先用办公软件把文档导出为 PDF，再\n按纸张尺寸排版，最后由打印驱动输出。这样做的好处是排版在导出阶段已经\n固定，打印阶段不再依赖打印驱动对字体的支持。若打印机驱动缺少某些字\n体，直接打印 Word 就可能出现方框或字形替换；先转 PDF 则把字体嵌入到文\n件中，输出更稳定。 \n第2 节：本软件在打印 Word 文档前，会先用办公软件把文档导出为 PDF，再\n按纸张尺寸排版，最后由打印驱动输出。这样做的好处是排版在导出阶段已经\n固定，打印阶段不再依赖打印驱动对字体的支持。若打印机驱动缺少某些字\n体，直接打印 Word 就可能出现方框"
+    },
+    "B": {
+      "text": {
+        "pdf_chars": 1380,
+        "source_chars": 1380,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 1.0,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDGEE+SimHei": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              2
+            ]
+          },
+          "BCDHEE+SimHei": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              2
+            ]
+          },
+          "BCDIEE+KaiTi": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              2
+            ]
+          },
+          "BCDJEE+KaiTi": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              2
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 1380,
+        "pages": 2
+      },
+      "sampled_text": "纯中文技术说明 \n第1 节：本软件在打印 Word 文档前，会先用办公软件把文档导出为 PDF，再\n按纸张尺寸排版，最后由打印驱动输出。这样做的好处是排版在导出阶段已经\n固定，打印阶段不再依赖打印驱动对字体的支持。若打印机驱动缺少某些字\n体，直接打印 Word 就可能出现方框或字形替换；先转 PDF 则把字体嵌入到文\n件中，输出更稳定。 \n第2 节：本软件在打印 Word 文档前，会先用办公软件把文档导出为 PDF，再\n按纸张尺寸排版，最后由打印驱动输出。这样做的好处是排版在导出阶段已经\n固定，打印阶段不再依赖打印驱动对字体的支持。若打印机驱动缺少某些字\n体，直接打印 Word 就可能出现方框"
+    },
+    "diff_convert": {
+      "pages_compared": 2,
+      "mean_diff_ratio": 0.0,
+      "max_diff_ratio": 0.0,
+      "max_page": 2,
+      "per_page": [
+        0.0,
+        0.0
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "diff_print": {
+      "pages_compared": 2,
+      "mean_diff_ratio": 0.09114,
+      "max_diff_ratio": 0.12014,
+      "max_page": 1,
+      "per_page": [
+        0.12014,
+        0.06214
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "printA": {
+      "pages": 2,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 2
+    },
+    "printB": {
+      "pages": 2,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 2
+    },
+    "text_identical": true
+  },
+  "03_english_pure": {
+    "name": "03_english_pure.docx",
+    "pages": 6,
+    "declared_fonts": [
+      "Arial",
+      "Calibri",
+      "Times New Roman",
+      "宋体"
+    ],
+    "A": {
+      "text": {
+        "pdf_chars": 11737,
+        "source_chars": 11737,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 1.0,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+Calibri-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+Calibri-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+Calibri": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDHEE+Calibri": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDIEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              2,
+              4,
+              6
+            ]
+          },
+          "BCDJEE+TimesNewRomanPSMT": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              3,
+              4
+            ]
+          },
+          "BCDKEE+TimesNewRomanPSMT": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              3,
+              4
+            ]
+          },
+          "BCDLEE+ArialMT": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              5,
+              6
+            ]
+          },
+          "BCDMEE+ArialMT": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              5,
+              6
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 11737,
+        "pages": 6
+      },
+      "sampled_text": "English Only Sample Document \nSection 1. This sample contains English text only. It is used to compare the Word-to-PDF \nconversion fidelity of the product pipeline against the built-in Word export. Paragraphs use \nCalibri, Times New Roman and Arial at different sizes. This sample contains English te"
+    },
+    "B": {
+      "text": {
+        "pdf_chars": 11737,
+        "source_chars": 11737,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 1.0,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+Calibri-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+Calibri-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+Calibri": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDHEE+Calibri": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDIEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              2,
+              4,
+              6
+            ]
+          },
+          "BCDJEE+TimesNewRomanPSMT": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              3,
+              4
+            ]
+          },
+          "BCDKEE+TimesNewRomanPSMT": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              3,
+              4
+            ]
+          },
+          "BCDLEE+ArialMT": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              5,
+              6
+            ]
+          },
+          "BCDMEE+ArialMT": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              5,
+              6
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 11737,
+        "pages": 6
+      },
+      "sampled_text": "English Only Sample Document \nSection 1. This sample contains English text only. It is used to compare the Word-to-PDF \nconversion fidelity of the product pipeline against the built-in Word export. Paragraphs use \nCalibri, Times New Roman and Arial at different sizes. This sample contains English te"
+    },
+    "diff_convert": {
+      "pages_compared": 6,
+      "mean_diff_ratio": 0.0,
+      "max_diff_ratio": 0.0,
+      "max_page": 6,
+      "per_page": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "diff_print": {
+      "pages_compared": 6,
+      "mean_diff_ratio": 0.10846,
+      "max_diff_ratio": 0.14603,
+      "max_page": 5,
+      "per_page": [
+        0.13638,
+        0.11292,
+        0.14447,
+        0.06686,
+        0.14603,
+        0.04411
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "printA": {
+      "pages": 6,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 6
+    },
+    "printB": {
+      "pages": 6,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 6
+    },
+    "text_identical": true
+  },
+  "04_table": {
+    "name": "04_table.docx",
+    "pages": 4,
+    "declared_fonts": [
+      "Calibri",
+      "Times New Roman",
+      "宋体",
+      "微软雅黑"
+    ],
+    "A": {
+      "text": {
+        "pdf_chars": 3693,
+        "source_chars": 3693,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 0.9951,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "BCDHEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "BCDIEE+Calibri": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDJEE+Calibri": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 3693,
+        "pages": 4
+      },
+      "sampled_text": "表格与合并单元格 \n下表含 12 行 5 列，含表头加粗与中英混排内容。 \n第1 行 第1 列 \nCell(1,1) \n第1 行 第2 列 \nCell(1,2) \n第1 行 第3 列 \nCell(1,3) \n第1 行 第4 列 \nCell(1,4) \n第1 行 第5 列 \nCell(1,5) \n第2 行 第1 列 \nCell(2,1) \n第2 行 第2 列 \nCell(2,2) \n第2 行 第3 列 \nCell(2,3) \n第2 行 第4 列 \nCell(2,4) \n第2 行 第5 列 \nCell(2,5) \n第3 行 第1 列 \nCell(3,1) \n第3 行 第2 列 \nCell(3,2)"
+    },
+    "B": {
+      "text": {
+        "pdf_chars": 3693,
+        "source_chars": 3693,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 0.9951,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "BCDHEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "BCDIEE+Calibri": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDJEE+Calibri": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 3693,
+        "pages": 4
+      },
+      "sampled_text": "表格与合并单元格 \n下表含 12 行 5 列，含表头加粗与中英混排内容。 \n第1 行 第1 列 \nCell(1,1) \n第1 行 第2 列 \nCell(1,2) \n第1 行 第3 列 \nCell(1,3) \n第1 行 第4 列 \nCell(1,4) \n第1 行 第5 列 \nCell(1,5) \n第2 行 第1 列 \nCell(2,1) \n第2 行 第2 列 \nCell(2,2) \n第2 行 第3 列 \nCell(2,3) \n第2 行 第4 列 \nCell(2,4) \n第2 行 第5 列 \nCell(2,5) \n第3 行 第1 列 \nCell(3,1) \n第3 行 第2 列 \nCell(3,2)"
+    },
+    "diff_convert": {
+      "pages_compared": 4,
+      "mean_diff_ratio": 0.0,
+      "max_diff_ratio": 0.0,
+      "max_page": 4,
+      "per_page": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "diff_print": {
+      "pages_compared": 4,
+      "mean_diff_ratio": 0.07336,
+      "max_diff_ratio": 0.12252,
+      "max_page": 3,
+      "per_page": [
+        0.09645,
+        0.03604,
+        0.12252,
+        0.03845
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "printA": {
+      "pages": 4,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 4
+    },
+    "printB": {
+      "pages": 4,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 4
+    },
+    "text_identical": true
+  },
+  "05_image": {
+    "name": "05_image.docx",
+    "pages": 2,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "微软雅黑"
+    ],
+    "A": {
+      "text": {
+        "pdf_chars": 122,
+        "source_chars": 124,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 0.9919,
+        "missing_chars": 2,
+        "missing_rate": 0.0161
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDHEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 122,
+        "pages": 2
+      },
+      "sampled_text": "图片与图文混排 \n下图为本机生成的 PNG，插入宽度 12cm，用于验证图片在 PDF 与打印稿中的清晰度。 \n图像下的说明文字\n（图 1：示例柱状图）。 \n \n\n第二页继续放一张缩小的图片，验证缩放插值差异。 \n图片会以位图或矢量形式嵌入 PDF，打印时再\n按 300 DPI 栅格化。 \n \n"
+    },
+    "B": {
+      "text": {
+        "pdf_chars": 122,
+        "source_chars": 124,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 0.9919,
+        "missing_chars": 2,
+        "missing_rate": 0.0161
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDHEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 122,
+        "pages": 2
+      },
+      "sampled_text": "图片与图文混排 \n下图为本机生成的 PNG，插入宽度 12cm，用于验证图片在 PDF 与打印稿中的清晰度。 \n图像下的说明文字\n（图 1：示例柱状图）。 \n \n\n第二页继续放一张缩小的图片，验证缩放插值差异。 \n图片会以位图或矢量形式嵌入 PDF，打印时再\n按 300 DPI 栅格化。 \n \n"
+    },
+    "diff_convert": {
+      "pages_compared": 2,
+      "mean_diff_ratio": 0.0,
+      "max_diff_ratio": 0.0,
+      "max_page": 2,
+      "per_page": [
+        0.0,
+        0.0
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "diff_print": {
+      "pages_compared": 2,
+      "mean_diff_ratio": 0.04674,
+      "max_diff_ratio": 0.04834,
+      "max_page": 1,
+      "per_page": [
+        0.04834,
+        0.04514
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "printA": {
+      "pages": 2,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 2
+    },
+    "printB": {
+      "pages": 2,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 2
+    },
+    "text_identical": true
+  },
+  "06_formula": {
+    "name": "06_formula.docx",
+    "pages": 1,
+    "declared_fonts": [
+      "Cambria Math",
+      "Times New Roman",
+      "宋体",
+      "微软雅黑"
+    ],
+    "A": {
+      "text": {
+        "pdf_chars": 162,
+        "source_chars": 159,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 0.9907,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDHEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDIEE+CambriaMath": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDJEE+CambriaMath": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 162,
+        "pages": 1
+      },
+      "sampled_text": "公式与特殊符号 \n下列符号覆盖数学、希腊字母、箭头、圈号与货币符号，全部使用 Cambria Math / 宋\n体。 \n∑ ∏ ∫ √ ± ≤ ≥ ≠ ≈ ∞ ∂ ∇ α β γ δ λ μ π σ ω Δ Ω → \n← ↑ ↓ ↔ ⇒ ∈ ∉ ⊂ ⊃ ∪ ∩ \n圈号与单位：①②③④⑤ ℃ ℉ ™ © ® § ¥ € £ ‰ \n线性公式：E = mc²，a² + b² = c²，x = (-b ± √(b² - 4ac)) / 2a \n𝑦 = (−𝑏 + √𝑏2 − 4𝑎𝑐) 2𝑎 \n \n"
+    },
+    "B": {
+      "text": {
+        "pdf_chars": 162,
+        "source_chars": 159,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 0.9907,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDHEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDIEE+CambriaMath": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDJEE+CambriaMath": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 162,
+        "pages": 1
+      },
+      "sampled_text": "公式与特殊符号 \n下列符号覆盖数学、希腊字母、箭头、圈号与货币符号，全部使用 Cambria Math / 宋\n体。 \n∑ ∏ ∫ √ ± ≤ ≥ ≠ ≈ ∞ ∂ ∇ α β γ δ λ μ π σ ω Δ Ω → \n← ↑ ↓ ↔ ⇒ ∈ ∉ ⊂ ⊃ ∪ ∩ \n圈号与单位：①②③④⑤ ℃ ℉ ™ © ® § ¥ € £ ‰ \n线性公式：E = mc²，a² + b² = c²，x = (-b ± √(b² - 4ac)) / 2a \n𝑦 = (−𝑏 + √𝑏2 − 4𝑎𝑐) 2𝑎 \n \n"
+    },
+    "diff_convert": {
+      "pages_compared": 1,
+      "mean_diff_ratio": 0.0,
+      "max_diff_ratio": 0.0,
+      "max_page": 1,
+      "per_page": [
+        0.0
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "diff_print": {
+      "pages_compared": 1,
+      "mean_diff_ratio": 0.0202,
+      "max_diff_ratio": 0.0202,
+      "max_page": 1,
+      "per_page": [
+        0.0202
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "printA": {
+      "pages": 2,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 2
+    },
+    "printB": {
+      "pages": 1,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 1
+    },
+    "text_identical": true
+  },
+  "07_header_footer": {
+    "name": "07_header_footer.docx",
+    "pages": 5,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "微软雅黑"
+    ],
+    "A": {
+      "text": {
+        "pdf_chars": 1133,
+        "source_chars": 978,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 0.9266,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "BCDFEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "BCDGEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDHEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 1133,
+        "pages": 5
+      },
+      "sampled_text": "内部资料 · 页眉示例 Internal Use Only \n第 1 页 / 共 5 页 \n页眉页脚与页码 \n本文档正文 5 页，每页都有页眉、页脚和“第 N 页 / 共 M 页”页码域。 \n \n\n内部资料 · 页眉示例 Internal Use Only \n第 2 页 / 共 5 页 \n第 2 页正文：页眉与页码是打印稿上最容易发生位移的元素，需要在像素层比较其位\n置是否一致。 \n填充段落 1：中文与 English 混排，验证页眉页脚不随正文缩放。 \n填充段落 2：中文与 English 混排，验证页眉页脚不随正文缩放。 \n填充段落 3：中文与 English 混排，验证页眉页脚不随正文缩"
+    },
+    "B": {
+      "text": {
+        "pdf_chars": 1133,
+        "source_chars": 978,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 0.9266,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "BCDFEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "BCDGEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDHEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 1133,
+        "pages": 5
+      },
+      "sampled_text": "内部资料 · 页眉示例 Internal Use Only \n第 1 页 / 共 5 页 \n页眉页脚与页码 \n本文档正文 5 页，每页都有页眉、页脚和“第 N 页 / 共 M 页”页码域。 \n \n\n内部资料 · 页眉示例 Internal Use Only \n第 2 页 / 共 5 页 \n第 2 页正文：页眉与页码是打印稿上最容易发生位移的元素，需要在像素层比较其位\n置是否一致。 \n填充段落 1：中文与 English 混排，验证页眉页脚不随正文缩放。 \n填充段落 2：中文与 English 混排，验证页眉页脚不随正文缩放。 \n填充段落 3：中文与 English 混排，验证页眉页脚不随正文缩"
+    },
+    "diff_convert": {
+      "pages_compared": 5,
+      "mean_diff_ratio": 0.0,
+      "max_diff_ratio": 0.0,
+      "max_page": 5,
+      "per_page": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "diff_print": {
+      "pages_compared": 5,
+      "mean_diff_ratio": 0.02337,
+      "max_diff_ratio": 0.02696,
+      "max_page": 5,
+      "per_page": [
+        0.00903,
+        0.02695,
+        0.02695,
+        0.02695,
+        0.02696
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "printA": {
+      "pages": 6,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 6
+    },
+    "printB": {
+      "pages": 5,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 5
+    },
+    "text_identical": true
+  },
+  "08_legacy": {
+    "name": "08_legacy.doc",
+    "pages": 2,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "黑体"
+    ],
+    "A": {
+      "text": {
+        "pdf_chars": 508,
+        "source_chars": 508,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 1.0,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+SimHei": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+SimHei": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDHEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDIEE+TimesNewRomanPSMT": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 508,
+        "pages": 2
+      },
+      "sampled_text": "旧格式 .doc 样本（Word 97-2003） \n本文件以 Word 97-2003 二进制格式保存，用于验证旧格式在转换链路中的表现。 \nLegacy binary format may behave differently from OOXML. 中文与 English 混排。 \n\n \n第1 行 第1 列 \nCell(1,1) \n第1 行 第2 列 \nCell(1,2) \n第1 行 第3 列 \nCell(1,3) \n第1 行 第4 列 \nCell(1,4) \n第2 行 第1 列 \nCell(2,1) \n第2 行 第2 列 \nCell(2,2) \n第2 行 第3 列 \nCell(2,3)"
+    },
+    "B": {
+      "text": {
+        "pdf_chars": 508,
+        "source_chars": 508,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 1.0,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+SimHei": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+SimHei": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDHEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2
+            ]
+          },
+          "BCDIEE+TimesNewRomanPSMT": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 508,
+        "pages": 2
+      },
+      "sampled_text": "旧格式 .doc 样本（Word 97-2003） \n本文件以 Word 97-2003 二进制格式保存，用于验证旧格式在转换链路中的表现。 \nLegacy binary format may behave differently from OOXML. 中文与 English 混排。 \n\n \n第1 行 第1 列 \nCell(1,1) \n第1 行 第2 列 \nCell(1,2) \n第1 行 第3 列 \nCell(1,3) \n第1 行 第4 列 \nCell(1,4) \n第2 行 第1 列 \nCell(2,1) \n第2 行 第2 列 \nCell(2,2) \n第2 行 第3 列 \nCell(2,3)"
+    },
+    "diff_convert": {
+      "pages_compared": 2,
+      "mean_diff_ratio": 0.0,
+      "max_diff_ratio": 0.0,
+      "max_page": 2,
+      "per_page": [
+        0.0,
+        0.0
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "diff_print": {
+      "pages_compared": 2,
+      "mean_diff_ratio": 0.02358,
+      "max_diff_ratio": 0.03472,
+      "max_page": 2,
+      "per_page": [
+        0.01244,
+        0.03472
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "printA": {
+      "pages": 2,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 2
+    },
+    "printB": {
+      "pages": 2,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 2
+    },
+    "text_identical": true
+  },
+  "09_missing_font": {
+    "name": "09_missing_font.docx",
+    "pages": 1,
+    "declared_fonts": [
+      "NoSuchFontABC",
+      "Times New Roman",
+      "宋体"
+    ],
+    "A": {
+      "text": {
+        "pdf_chars": 156,
+        "source_chars": 156,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 1.0,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+Cambria-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+Cambria-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDHEE+Cambria": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDIEE+Cambria": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [
+          "BCDFEE+Cambria-Bold",
+          "BCDGEE+Cambria-Bold",
+          "BCDHEE+Cambria",
+          "BCDIEE+Cambria"
+        ],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 156,
+        "pages": 1
+      },
+      "sampled_text": "缺失字体样本 NoSuchFontABC \n以下段落被显式设置为本机不存在的字体 NoSuchFontABC，用于验证字体回退。 \nNoSuchFontABC 渲染：中文汉字与 Latin ABC 0123 都会经过字体替换。 \n第二段同样使用 NoSuchFontABC：符号 ①②③ ∑ √ 与标点“引\n号”也要检查。 \n结尾段落恢复宋体，作为对照。 \n \n"
+    },
+    "B": {
+      "text": {
+        "pdf_chars": 156,
+        "source_chars": 156,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 1.0,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDFEE+Cambria-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDGEE+Cambria-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDHEE+Cambria": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDIEE+Cambria": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [
+          "BCDFEE+Cambria-Bold",
+          "BCDGEE+Cambria-Bold",
+          "BCDHEE+Cambria",
+          "BCDIEE+Cambria"
+        ],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 156,
+        "pages": 1
+      },
+      "sampled_text": "缺失字体样本 NoSuchFontABC \n以下段落被显式设置为本机不存在的字体 NoSuchFontABC，用于验证字体回退。 \nNoSuchFontABC 渲染：中文汉字与 Latin ABC 0123 都会经过字体替换。 \n第二段同样使用 NoSuchFontABC：符号 ①②③ ∑ √ 与标点“引\n号”也要检查。 \n结尾段落恢复宋体，作为对照。 \n \n"
+    },
+    "diff_convert": {
+      "pages_compared": 1,
+      "mean_diff_ratio": 0.0,
+      "max_diff_ratio": 0.0,
+      "max_page": 1,
+      "per_page": [
+        0.0
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "diff_print": {
+      "pages_compared": 1,
+      "mean_diff_ratio": 0.01992,
+      "max_diff_ratio": 0.01992,
+      "max_page": 1,
+      "per_page": [
+        0.01992
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "printA": {
+      "pages": 2,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 2
+    },
+    "printB": {
+      "pages": 1,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 1
+    },
+    "text_identical": true
+  },
+  "10_long_35p": {
+    "name": "10_long_35p.docx",
+    "pages": 35,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "微软雅黑",
+      "黑体"
+    ],
+    "A": {
+      "text": {
+        "pdf_chars": 48635,
+        "source_chars": 47664,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 0.9899,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          "BCDFEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          "BCDGEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDHEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDIEE+SimHei": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          "BCDJEE+SimHei": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          "BCDKEE+TimesNewRomanPSMT": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          "BCDLEE+TimesNewRomanPSMT": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 48635,
+        "pages": 35
+      },
+      "sampled_text": "长文档性能样本 Long Document \n第  页 / 共  页351 \n35 页长文档（性能样本） \n第 1 页标题 Page 1 \n本段用于制造分页压力：中文段落与 English paragraph 交替出现，包含数字 2026、标点\n符号、括号与百分比 12.5%。The purpose is to measure conversion and printing time on a \ndocument long enough to amortize cold start. 本段用于制造分页压力：中文段落与 English \nparagraph 交替出现，包含数字 2026、标点符号"
+    },
+    "B": {
+      "text": {
+        "pdf_chars": 48635,
+        "source_chars": 47664,
+        "ufffd": 0,
+        "box_chars": 0,
+        "seq_ratio_vs_source": 0.9899,
+        "missing_chars": 0,
+        "missing_rate": 0.0
+      },
+      "font": {
+        "fonts": {
+          "BCDEEE+SimSun": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          "BCDFEE+SimSun": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          "BCDGEE+MicrosoftYaHei-Bold": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDHEE+MicrosoftYaHei-Bold": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1
+            ]
+          },
+          "BCDIEE+SimHei": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          "BCDJEE+SimHei": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          "BCDKEE+TimesNewRomanPSMT": {
+            "type": "Type0",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          "BCDLEE+TimesNewRomanPSMT": {
+            "type": "TrueType",
+            "embedded": true,
+            "pages": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          }
+        },
+        "unembedded": [],
+        "substituted": [],
+        "missing_glyph_uses": 0,
+        "glyph_checks": 48635,
+        "pages": 35
+      },
+      "sampled_text": "长文档性能样本 Long Document \n第  页 / 共  页351 \n35 页长文档（性能样本） \n第 1 页标题 Page 1 \n本段用于制造分页压力：中文段落与 English paragraph 交替出现，包含数字 2026、标点\n符号、括号与百分比 12.5%。The purpose is to measure conversion and printing time on a \ndocument long enough to amortize cold start. 本段用于制造分页压力：中文段落与 English \nparagraph 交替出现，包含数字 2026、标点符号"
+    },
+    "diff_convert": {
+      "pages_compared": 35,
+      "mean_diff_ratio": 0.0,
+      "max_diff_ratio": 0.0,
+      "max_page": 35,
+      "per_page": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "diff_print": {
+      "pages_compared": 35,
+      "mean_diff_ratio": 0.08715,
+      "max_diff_ratio": 0.09353,
+      "max_page": 1,
+      "per_page": [
+        0.09353,
+        0.08679,
+        0.0868,
+        0.08679,
+        0.08682,
+        0.08681,
+        0.08674,
+        0.08686,
+        0.08681,
+        0.08699,
+        0.08687,
+        0.08696,
+        0.08696,
+        0.08696,
+        0.08698,
+        0.08698,
+        0.0869,
+        0.08702,
+        0.08698,
+        0.08707,
+        0.08695,
+        0.08705,
+        0.08705,
+        0.08705,
+        0.08707,
+        0.08707,
+        0.08699,
+        0.08711,
+        0.08706,
+        0.08708,
+        0.08696,
+        0.08705,
+        0.08705,
+        0.08705,
+        0.08707
+      ],
+      "threshold": 32,
+      "dpi": 150
+    },
+    "printA": {
+      "pages": 36,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 36
+    },
+    "printB": {
+      "pages": 35,
+      "text_chars": 0,
+      "font_count": 0,
+      "image_pages": 35
+    },
+    "text_identical": true
+  }
+}

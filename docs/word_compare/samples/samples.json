@@ -1,0 +1,242 @@
+[
+  {
+    "name": "01_mixed_short.docx",
+    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\01_mixed_short.docx",
+    "note": "中英混排短文档（10.5/11/12/16pt）",
+    "pages": 1,
+    "fonts": {
+      "宋体": [
+        10.5
+      ],
+      "微软雅黑": [
+        12.0,
+        16.0
+      ]
+    },
+    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\01_mixed_short.source.txt",
+    "size_bytes": 18417,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "微软雅黑"
+    ]
+  },
+  {
+    "name": "02_chinese_pure.docx",
+    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\02_chinese_pure.docx",
+    "note": "纯中文（宋体/黑体/楷体 12pt）",
+    "pages": 2,
+    "fonts": {
+      "宋体": [
+        10.5,
+        12.0,
+        18.0
+      ],
+      "楷体": [
+        12.0
+      ],
+      "黑体": [
+        12.0,
+        16.0
+      ]
+    },
+    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\02_chinese_pure.source.txt",
+    "size_bytes": 19387,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "楷体",
+      "黑体"
+    ]
+  },
+  {
+    "name": "03_english_pure.docx",
+    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\03_english_pure.docx",
+    "note": "纯英文（Calibri/Times New Roman/Arial 10-12pt）",
+    "pages": 6,
+    "fonts": {
+      "Arial": [
+        10.0
+      ],
+      "Calibri": [
+        11.0,
+        20.0
+      ],
+      "Times New Roman": [
+        12.0
+      ],
+      "宋体": [
+        10.5
+      ]
+    },
+    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\03_english_pure.source.txt",
+    "size_bytes": 20664,
+    "declared_fonts": [
+      "Arial",
+      "Calibri",
+      "Times New Roman",
+      "宋体"
+    ]
+  },
+  {
+    "name": "04_table.docx",
+    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\04_table.docx",
+    "note": "表格（12x5、8x4）9pt",
+    "pages": 4,
+    "fonts": {
+      "宋体": [
+        9.0,
+        10.5
+      ],
+      "微软雅黑": [
+        16.0
+      ]
+    },
+    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\04_table.source.txt",
+    "size_bytes": 33404,
+    "declared_fonts": [
+      "Calibri",
+      "Times New Roman",
+      "宋体",
+      "微软雅黑"
+    ]
+  },
+  {
+    "name": "05_image.docx",
+    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\05_image.docx",
+    "note": "图片（PNG 12cm/7cm）",
+    "pages": 2,
+    "fonts": {
+      "宋体": [
+        9.0,
+        10.5
+      ],
+      "微软雅黑": [
+        16.0
+      ]
+    },
+    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\05_image.source.txt",
+    "size_bytes": 39382,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "微软雅黑"
+    ]
+  },
+  {
+    "name": "06_formula.docx",
+    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\06_formula.docx",
+    "note": "公式与特殊符号（Cambria Math 13-14pt）",
+    "pages": 1,
+    "fonts": {
+      "Cambria Math": [
+        14.0
+      ],
+      "宋体": [
+        10.5,
+        14.0
+      ],
+      "微软雅黑": [
+        16.0
+      ]
+    },
+    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\06_formula.source.txt",
+    "size_bytes": 19708,
+    "declared_fonts": [
+      "Cambria Math",
+      "Times New Roman",
+      "宋体",
+      "微软雅黑"
+    ]
+  },
+  {
+    "name": "07_header_footer.docx",
+    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\07_header_footer.docx",
+    "note": "页眉/页脚/页码 5 页 11pt",
+    "pages": 5,
+    "fonts": {
+      "宋体": [
+        10.5,
+        11.0
+      ],
+      "微软雅黑": [
+        16.0
+      ]
+    },
+    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\07_header_footer.source.txt",
+    "size_bytes": 25398,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "微软雅黑"
+    ]
+  },
+  {
+    "name": "08_legacy.doc",
+    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\08_legacy.doc",
+    "note": "旧格式 .doc 2 页",
+    "pages": 2,
+    "fonts": {
+      "宋体": [
+        9.0,
+        10.5
+      ],
+      "黑体": [
+        16.0
+      ]
+    },
+    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\08_legacy.source.txt",
+    "size_bytes": 33792,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "黑体"
+    ]
+  },
+  {
+    "name": "09_missing_font.docx",
+    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\09_missing_font.docx",
+    "note": "缺失字体 NoSuchFontABC 12/14pt",
+    "pages": 1,
+    "fonts": {
+      "NoSuchFontABC": [
+        10.5,
+        12.0,
+        14.0,
+        16.0
+      ]
+    },
+    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\09_missing_font.source.txt",
+    "size_bytes": 14994,
+    "declared_fonts": [
+      "NoSuchFontABC",
+      "Times New Roman",
+      "宋体"
+    ]
+  },
+  {
+    "name": "10_long_35p.docx",
+    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\10_long_35p.docx",
+    "note": "35 页长文档 10.5-12pt",
+    "pages": 35,
+    "fonts": {
+      "宋体": [
+        10.5
+      ],
+      "微软雅黑": [
+        18.0
+      ],
+      "黑体": [
+        12.0
+      ]
+    },
+    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\10_long_35p.source.txt",
+    "size_bytes": 33734,
+    "declared_fonts": [
+      "Times New Roman",
+      "宋体",
+      "微软雅黑",
+      "黑体"
+    ]
+  }
+]

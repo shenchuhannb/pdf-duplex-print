@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """离屏生成风格 A 的最终截图：docs/ui_screenshot.png（主界面）与 docs/ui_advanced.png（高级设置）。
 
-运行：D:\\Anaconda3\\python.exe tools\\capture_ui.py
+运行：python tools\\capture_ui.py
 
 ★ 硬性约束（后续修改必须保留）：
   1. 所有截图必须离屏完成，绝对不能在用户桌面弹出任何窗口（包括一闪而过的

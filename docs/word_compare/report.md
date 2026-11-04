@@ -1,6 +1,6 @@
 # Word 打印对比实测：本软件链路 vs 手动“Word 转 PDF 再打印”
 
-测试日期：2026-11-04　测试机：AMD Ryzen 7 7840HS / 27.8 GB RAM / Windows 11 10.0.26300
+测试日期：2026-11-04　测试机：x64 8 核 / 32 GB RAM / Windows 11
 Word：Microsoft Office 家庭和学生版 2021 x64，16.0.20527.20112
 打印驱动：Microsoft Print to PDF（两条路径同一驱动）；打印分辨率 300 DPI，落盘 PDF 为 A4。
 
@@ -194,7 +194,7 @@ A 单文件慢的主因已拆解测量：子进程完整转换 6.92 s，其中 `
 | 人工目检截图（4 份 × 2 路径，第 1 页） | `docs\word_compare\shots\*.png` |
 | 速度对比图 / 打印差异图 | `docs\word_compare\speed_total.png`、`docs\word_compare\print_diff.png` |
 | 测量与样本脚本 | `docs\word_compare\scripts\` |
-| A/B 转换、排版、打印 PDF（大文件） | `C:\Users\Lenovo\AppData\Local\Temp\word_print_compare\out\convA|exportB|layoutA|printA|printB\` |
+| A/B 转换、排版、打印 PDF（大文件） | `%TEMP%\word_print_compare\out\convA|exportB|layoutA|printA|printB\` |
 
 代表性热力图：
 
@@ -204,7 +204,7 @@ A 单文件慢的主因已拆解测量：子进程完整转换 6.92 s，其中 `
 ## 七、复现命令
 
 ```powershell
-cd C:\Users\Lenovo\AppData\Local\Temp\word_print_compare
+cd %TEMP%\word_print_compare
 
 # 1) 生成 10 份样本（Word COM）
 python make_samples.py

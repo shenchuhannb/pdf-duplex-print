@@ -1,7 +1,7 @@
 [
   {
     "name": "01_mixed_short.docx",
-    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\01_mixed_short.docx",
+    "path": "%TEMP%\\word_print_compare\\samples\\01_mixed_short.docx",
     "note": "中英混排短文档（10.5/11/12/16pt）",
     "pages": 1,
     "fonts": {
@@ -13,7 +13,7 @@
         16.0
       ]
     },
-    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\01_mixed_short.source.txt",
+    "source_text": "%TEMP%\\word_print_compare\\samples\\01_mixed_short.source.txt",
     "size_bytes": 18417,
     "declared_fonts": [
       "Times New Roman",
@@ -23,7 +23,7 @@
   },
   {
     "name": "02_chinese_pure.docx",
-    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\02_chinese_pure.docx",
+    "path": "%TEMP%\\word_print_compare\\samples\\02_chinese_pure.docx",
     "note": "纯中文（宋体/黑体/楷体 12pt）",
     "pages": 2,
     "fonts": {
@@ -40,7 +40,7 @@
         16.0
       ]
     },
-    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\02_chinese_pure.source.txt",
+    "source_text": "%TEMP%\\word_print_compare\\samples\\02_chinese_pure.source.txt",
     "size_bytes": 19387,
     "declared_fonts": [
       "Times New Roman",
@@ -51,7 +51,7 @@
   },
   {
     "name": "03_english_pure.docx",
-    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\03_english_pure.docx",
+    "path": "%TEMP%\\word_print_compare\\samples\\03_english_pure.docx",
     "note": "纯英文（Calibri/Times New Roman/Arial 10-12pt）",
     "pages": 6,
     "fonts": {
@@ -69,7 +69,7 @@
         10.5
       ]
     },
-    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\03_english_pure.source.txt",
+    "source_text": "%TEMP%\\word_print_compare\\samples\\03_english_pure.source.txt",
     "size_bytes": 20664,
     "declared_fonts": [
       "Arial",
@@ -80,7 +80,7 @@
   },
   {
     "name": "04_table.docx",
-    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\04_table.docx",
+    "path": "%TEMP%\\word_print_compare\\samples\\04_table.docx",
     "note": "表格（12x5、8x4）9pt",
     "pages": 4,
     "fonts": {
@@ -92,7 +92,7 @@
         16.0
       ]
     },
-    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\04_table.source.txt",
+    "source_text": "%TEMP%\\word_print_compare\\samples\\04_table.source.txt",
     "size_bytes": 33404,
     "declared_fonts": [
       "Calibri",
@@ -103,7 +103,7 @@
   },
   {
     "name": "05_image.docx",
-    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\05_image.docx",
+    "path": "%TEMP%\\word_print_compare\\samples\\05_image.docx",
     "note": "图片（PNG 12cm/7cm）",
     "pages": 2,
     "fonts": {
@@ -115,7 +115,7 @@
         16.0
       ]
     },
-    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\05_image.source.txt",
+    "source_text": "%TEMP%\\word_print_compare\\samples\\05_image.source.txt",
     "size_bytes": 39382,
     "declared_fonts": [
       "Times New Roman",
@@ -125,7 +125,7 @@
   },
   {
     "name": "06_formula.docx",
-    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\06_formula.docx",
+    "path": "%TEMP%\\word_print_compare\\samples\\06_formula.docx",
     "note": "公式与特殊符号（Cambria Math 13-14pt）",
     "pages": 1,
     "fonts": {
@@ -140,7 +140,7 @@
         16.0
       ]
     },
-    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\06_formula.source.txt",
+    "source_text": "%TEMP%\\word_print_compare\\samples\\06_formula.source.txt",
     "size_bytes": 19708,
     "declared_fonts": [
       "Cambria Math",
@@ -151,7 +151,7 @@
   },
   {
     "name": "07_header_footer.docx",
-    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\07_header_footer.docx",
+    "path": "%TEMP%\\word_print_compare\\samples\\07_header_footer.docx",
     "note": "页眉/页脚/页码 5 页 11pt",
     "pages": 5,
     "fonts": {
@@ -163,7 +163,7 @@
         16.0
       ]
     },
-    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\07_header_footer.source.txt",
+    "source_text": "%TEMP%\\word_print_compare\\samples\\07_header_footer.source.txt",
     "size_bytes": 25398,
     "declared_fonts": [
       "Times New Roman",
@@ -173,7 +173,7 @@
   },
   {
     "name": "08_legacy.doc",
-    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\08_legacy.doc",
+    "path": "%TEMP%\\word_print_compare\\samples\\08_legacy.doc",
     "note": "旧格式 .doc 2 页",
     "pages": 2,
     "fonts": {
@@ -185,7 +185,7 @@
         16.0
       ]
     },
-    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\08_legacy.source.txt",
+    "source_text": "%TEMP%\\word_print_compare\\samples\\08_legacy.source.txt",
     "size_bytes": 33792,
     "declared_fonts": [
       "Times New Roman",
@@ -195,7 +195,7 @@
   },
   {
     "name": "09_missing_font.docx",
-    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\09_missing_font.docx",
+    "path": "%TEMP%\\word_print_compare\\samples\\09_missing_font.docx",
     "note": "缺失字体 NoSuchFontABC 12/14pt",
     "pages": 1,
     "fonts": {
@@ -206,7 +206,7 @@
         16.0
       ]
     },
-    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\09_missing_font.source.txt",
+    "source_text": "%TEMP%\\word_print_compare\\samples\\09_missing_font.source.txt",
     "size_bytes": 14994,
     "declared_fonts": [
       "NoSuchFontABC",
@@ -216,7 +216,7 @@
   },
   {
     "name": "10_long_35p.docx",
-    "path": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\10_long_35p.docx",
+    "path": "%TEMP%\\word_print_compare\\samples\\10_long_35p.docx",
     "note": "35 页长文档 10.5-12pt",
     "pages": 35,
     "fonts": {
@@ -230,7 +230,7 @@
         12.0
       ]
     },
-    "source_text": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\word_print_compare\\samples\\10_long_35p.source.txt",
+    "source_text": "%TEMP%\\word_print_compare\\samples\\10_long_35p.source.txt",
     "size_bytes": 33734,
     "declared_fonts": [
       "Times New Roman",

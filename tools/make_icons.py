@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """生成最终图标（风格 A：单张纸 + 折角）与多尺寸 app_icon.ico / png。
 
-运行：D:\\Anaconda3\\python.exe tools\\make_icons.py
+运行：python tools\\make_icons.py
 输出：
   docs/icon_a.png、docs/icon_a_512.png       256/512px 预览
   docs/icon_a_16.png                        16px 小尺寸可读性预览（放大 8 倍展示）

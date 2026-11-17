@@ -33,7 +33,8 @@ except ImportError:  # pragma: no cover
 
 from core_utils import PrintError, PrinterOfflineError, PrintTimeoutError, CancelledByUser
 
-JOB_POLL_INTERVAL = 1.0              # 打印队列轮询间隔（秒）
+JOB_POLL_INTERVAL = 3.0              # 老式 USB 驱动的队列轮询间隔（秒）
+PRINTER_STATUS_POLL_INTERVAL = 10.0  # 更慢地读取打印机/端口状态，避免驱动被连续探测
 JOB_TIMEOUT_SECONDS = 1800.0         # 单个打印任务等待上限（秒）
 POST_JOB_SETTLE_SECONDS = 2.0        # 任务完成后的额外等待，给机械出纸留余量
 
@@ -630,6 +631,7 @@ def wait_for_print_job(
     open_failures = 0
     get_job_failures = 0
     job_observed = False
+    last_printer_status_check = 0.0
     while True:
         if stop_event.is_set():
             return False
@@ -658,19 +660,22 @@ def wait_for_print_job(
         open_failures = 0
 
         try:
-            printer_info = win32print.GetPrinter(handle, 2) or {}
-            printer_status = int(printer_info.get("Status") or 0)
-            if printer_status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
-                _try_cancel_job(printer_name, job_id)
-                raise PrinterOfflineError(
-                    f"打印机「{printer_name}」已脱机，打印任务已取消。\n请检查电源与连接后重新打印。"
-                )
-            if (printer_status & getattr(win32print, "PRINTER_STATUS_PAUSED", 0x1)
-                    and not paused_hint_logged and log):
-                # 不改变流程，只解释“为什么一直没动静”，避免用户干等到监听超时
-                paused_hint_logged = True
-                log("打印机当前处于暂停状态：任务会一直停在队列中，"
-                    "请在 Windows 队列里恢复后继续。")
+            now = time.time()
+            if now - last_printer_status_check >= PRINTER_STATUS_POLL_INTERVAL:
+                printer_info = win32print.GetPrinter(handle, 2) or {}
+                printer_status = int(printer_info.get("Status") or 0)
+                last_printer_status_check = now
+                if printer_status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
+                    _try_cancel_job(printer_name, job_id)
+                    raise PrinterOfflineError(
+                        f"打印机「{printer_name}」已脱机，打印任务已取消。\n"
+                        "请检查电源与连接后重新打印。"
+                    )
+                if (printer_status & getattr(win32print, "PRINTER_STATUS_PAUSED", 0x1)
+                        and not paused_hint_logged and log):
+                    paused_hint_logged = True
+                    log("打印机当前处于暂停状态：任务会一直停在队列中，"
+                        "请在 Windows 队列里恢复后继续。")
 
             try:
                 job = win32print.GetJob(handle, job_id, 2)

@@ -884,8 +884,8 @@ def convert_batch(items: List[dict], timeout_per_file: float = 180.0,
     open(results_path, "w", encoding="utf-8").close()
 
     before = conversion_processes()
-    command = [python_exe or sys.executable, os.path.abspath(__file__),
-               "--batch", manifest_path, "--results", results_path]
+    command = _worker_command(
+        python_exe, "--batch", manifest_path, "--results", results_path)
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                creationflags=CREATE_NO_WINDOW)
     results: dict = {}
@@ -1018,8 +1018,7 @@ def convert_file(src: str, dst: str, timeout: float = 180.0,
         os.makedirs(folder, exist_ok=True)
 
     before = conversion_processes()
-    command = [python_exe or sys.executable, os.path.abspath(__file__),
-               "--src", src, "--dst", dst]
+    command = _worker_command(python_exe, "--src", src, "--dst", dst)
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                creationflags=CREATE_NO_WINDOW)
     try:
@@ -1080,6 +1079,14 @@ def convert_file(src: str, dst: str, timeout: float = 180.0,
 def _last_line(blob) -> str:
     text = (blob or b"").decode("utf-8", "ignore").strip()
     return text.splitlines()[-1] if text else ""
+
+
+def _worker_command(python_exe: Optional[str], *args: str) -> List[str]:
+    """Build the child command for source and PyInstaller-frozen launches."""
+    executable = python_exe or sys.executable
+    if getattr(sys, "frozen", False):
+        return [executable, "--word-convert-worker", *args]
+    return [executable, os.path.abspath(__file__), *args]
 
 
 def _remove_quietly(path: str) -> None:

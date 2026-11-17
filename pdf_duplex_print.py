@@ -122,6 +122,11 @@ def _self_check(root, args, app) -> None:
 
 
 def main(argv=None) -> None:
+    worker_args = list(sys.argv[1:] if argv is None else argv)
+    if worker_args and worker_args[0] == "--word-convert-worker":
+        from word_convert import _main as word_convert_main
+        raise SystemExit(word_convert_main(worker_args[1:]))
+
     # 日志落盘（%APPDATA%\PDFDuplexPrint\logs\app.log），便于打印失败后排查
     logger = get_logger()
     logger.info(

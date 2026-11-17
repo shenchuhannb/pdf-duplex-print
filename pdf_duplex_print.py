@@ -123,7 +123,11 @@ def _self_check(root, args, app) -> None:
 
 def main(argv=None) -> None:
     # 日志落盘（%APPDATA%\PDFDuplexPrint\logs\app.log），便于打印失败后排查
-    get_logger()
+    logger = get_logger()
+    logger.info(
+        "应用启动：executable=%s source=%s cwd=%s argv=%s",
+        sys.executable, os.path.abspath(__file__), os.getcwd(), sys.argv[1:],
+    )
 
     # 任务栏图标/分组：必须在创建 Tk 窗口之前给进程设置显式 AppUserModelID，
     # 否则 pythonw.exe 启动时任务栏会沿用宿主进程的 python 图标。

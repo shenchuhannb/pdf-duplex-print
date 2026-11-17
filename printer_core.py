@@ -582,10 +582,12 @@ def _try_cancel_job(printer_name: str, job_id: int) -> None:
         handle = win32print.OpenPrinter(printer_name)
         try:
             win32print.SetJob(handle, job_id, 0, None, win32print.JOB_CONTROL_CANCEL)
+            _logger.info("已请求取消打印任务：printer=%s job_id=%s", printer_name, job_id)
         finally:
             win32print.ClosePrinter(handle)
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("取消打印任务失败：printer=%s job_id=%s error=%s",
+                        printer_name, job_id, exc)
 
 
 def set_job_paused(printer_name: str, job_id: int, paused: bool) -> bool:
@@ -626,6 +628,7 @@ def wait_for_print_job(
     paused_hint_logged = False
     open_failures = 0
     get_job_failures = 0
+    job_observed = False
     while True:
         if stop_event.is_set():
             return False
@@ -672,20 +675,33 @@ def wait_for_print_job(
 
             try:
                 job = win32print.GetJob(handle, job_id, 2)
-            except Exception:
+            except Exception as exc:
                 # 任务消失通常意味着已出纸完成；但瞬时的 RPC/权限故障（安全软件
                 # 拦截等）同样会让 GetJob 抛异常。连续多次失败才判定“任务已出队列”，
                 # 避免误判完成而提前提示翻面，导致整批正反错位。
                 get_job_failures += 1
                 if get_job_failures >= 3:
-                    _logger.warning("GetJob 连续 %d 次失败，判定任务已出队列（视为完成）",
-                                    get_job_failures)
-                    return True
+                    if job_observed:
+                        _logger.info(
+                            "打印任务已从队列消失：printer=%s job_id=%s failures=%d",
+                            printer_name, job_id, get_job_failures)
+                        return True
+                    _try_cancel_job(printer_name, job_id)
+                    raise PrintError(
+                        f"打印任务 #{job_id} 提交后未能在队列中观察到，"
+                        f"请检查打印服务、驱动和打印机端口。\n最后错误：{exc}"
+                    ) from exc
                 time.sleep(JOB_POLL_INTERVAL)
                 continue
             get_job_failures = 0
+            job_observed = True
 
             flags = _job_status_flags(job)
+            _logger.info(
+                "打印任务状态：printer=%s job_id=%s status=%s flags=%s pages=%s/%s",
+                printer_name, job_id, job.get("Status"), flags,
+                job.get("PagesPrinted"), job.get("TotalPages"),
+            )
             if flags & getattr(win32print, "JOB_STATUS_OFFLINE", 0):
                 raise PrinterOfflineError(f"打印机「{printer_name}」脱机，请检查连接后重试。")
             if flags & (getattr(win32print, "JOB_STATUS_ERROR", 0)
@@ -959,6 +975,8 @@ class GdiPrinter:
                 raise PrintError(f"创建打印任务失败：{_win_error_text()}")
             self.last_job_id = job_id
             job_started = True
+            _logger.info("已创建打印任务：printer=%s job_id=%s name=%s pages=%s",
+                         self.printer_name, job_id, job_name, len(side_order))
 
             total = len(side_order)
             for index, rel in enumerate(side_order, start=1):
@@ -1005,6 +1023,8 @@ class GdiPrinter:
                 if _gdi32.EndPage(hdc) <= 0:
                     raise PrintError(f"结束打印页失败：{_win_error_text()}")
                 self.pages_sent += 1
+                _logger.info("已提交打印页：printer=%s job_id=%s page=%s/%s",
+                             self.printer_name, job_id, index, total)
 
                 if on_page:
                     on_page(index, total, rel)
@@ -1012,8 +1032,14 @@ class GdiPrinter:
             if _gdi32.EndDoc(hdc) <= 0:
                 raise PrintError(f"提交打印任务失败：{_win_error_text()}")
             job_started = False
+            _logger.info("已提交打印任务：printer=%s job_id=%s pages=%s",
+                         self.printer_name, job_id, self.pages_sent)
             return job_id
         except BaseException:
+            _logger.exception(
+                "打印任务执行异常：printer=%s job_id=%s pages_sent=%s",
+                self.printer_name, job_id, self.pages_sent,
+            )
             if job_started and hdc:
                 try:
                     _gdi32.AbortDoc(hdc)

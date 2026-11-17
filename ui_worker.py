@@ -38,9 +38,9 @@ from pdf_layout import (
     plan_batch_summary, preview_metrics, resolve_range_pages,
 )
 from printer_core import (
-    GdiPrinter, PrinterOptions, cancel_job, check_printer_ready, get_default_printer,
+    GdiPrinter, PrinterOptions, cancel_job, get_default_printer,
     get_printable_insets_pt, get_printer_sources, get_printer_status, list_printers,
-    open_directory, set_job_paused, wait_for_print_job,
+    open_directory, set_job_paused, validate_printer_connection, wait_for_print_job,
 )
 from settings_store import (
     acrobat_defaults, add_recent, default_settings, load_settings, save_settings,
@@ -486,7 +486,7 @@ class WorkerMixin:
         cancelled = False
         error_text = ""
         try:
-            check_printer_ready(snapshot["printer"])
+            validate_printer_connection(snapshot["printer"], snapshot["printer_options"])
             temp_dir = create_temp_dir(PRINT_TEMP_PREFIX)
             target_dir = snapshot["output_dir"] if snapshot["keep_output"] else temp_dir
             if snapshot["keep_output"]:

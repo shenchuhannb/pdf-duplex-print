@@ -537,6 +537,9 @@ def check_printer_ready(printer_name: str) -> None:
     """打印前的轻量检查：能否打开打印机、是否处于脱机/缺纸状态。"""
     if win32print is None:
         raise PrintError("缺少 pywin32 库，请执行：pip install pywin32")
+    printer_name = str(printer_name or "").strip()
+    if not printer_name:
+        raise PrintError("未选择打印机，请先选择一个可用的打印机。")
     status = get_printer_status(printer_name)
     if status["offline"]:
         raise PrinterOfflineError(
@@ -546,6 +549,25 @@ def check_printer_ready(printer_name: str) -> None:
         raise PrintError(f"打印机「{printer_name}」报告卡纸，请清理后重试。")
     if status["paper_out"]:
         raise PrintError(f"打印机「{printer_name}」报告缺纸，请补充纸张后重试。")
+
+
+def validate_printer_connection(printer_name: str, options: "PrinterOptions") -> None:
+    """在排版前验证打印队列和 GDI 设备上下文都能正常创建。
+
+    仅检查队列状态不足以发现驱动初始化失败；提前创建并立即释放一个 DC，
+    可以把驱动/端口问题转换成可读错误，避免用户等待整批排版后才失败。
+    """
+    check_printer_ready(printer_name)
+    hdc = None
+    try:
+        hdc, _devmode_buffer = _create_printer_dc(printer_name, options)
+    except PrintError:
+        raise
+    except Exception as exc:
+        raise PrintError(f"无法初始化打印机驱动「{printer_name}」：{exc}") from exc
+    finally:
+        if hdc:
+            _gdi32.DeleteDC(hdc)
 
 
 def _try_cancel_job(printer_name: str, job_id: int) -> None:
@@ -801,7 +823,8 @@ def _create_printer_dc(printer_name: str, options: PrinterOptions):
                 else:
                     devmode_ptr = None
                     devmode_buffer = None
-    except Exception:
+    except Exception as exc:
+        _logger.warning("读取打印机 DEVMODE 失败，将使用驱动默认设置：%s", exc)
         devmode_ptr = None
         devmode_buffer = None
     finally:
@@ -957,7 +980,7 @@ class GdiPrinter:
                     0, 0, raster.width, raster.height,
                     pixel_bits, ctypes.byref(bmi), BI_RGB, SRCCOPY,
                 )
-                if result < 0:
+                if result <= 0:
                     raise PrintError(f"绘制页面失败：{_win_error_text()}")
                 if _gdi32.EndPage(hdc) <= 0:
                     raise PrintError(f"结束打印页失败：{_win_error_text()}")

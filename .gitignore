@@ -1,5 +1,6 @@
 # 虚拟环境与解释器产物
 .venv/
+.pdf-duplex-env
 __pycache__/
 *.pyc
 *.pyo

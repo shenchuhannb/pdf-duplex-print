@@ -43,9 +43,19 @@ Windows 平台的 PDF 批量打印工具：用**普通单面打印机**实现**�
 run.bat
 ```
 
-`run.bat` can be launched directly after cloning. It creates the project-local
-`.venv` on first run and installs `requirements.txt` before starting the app.
-Python 3.10+ must be installed and available as `py` or `python`.
+首次运行会询问虚拟环境目录；按回车使用项目目录下的 `.venv`，也可以选择
+`D:\PythonEnvs\PDFDuplexPrint` 等统一环境目录。选择会保存到本地
+`.pdf-duplex-env`（不会提交到 Git），以后直接双击即可复用。
+
+也可以显式指定或重置环境：
+
+```bat
+run.bat "D:\PythonEnvs\PDFDuplexPrint"
+run.bat --reset-env
+```
+
+如果需要指定创建 venv 所用的基础 Python，可设置 `PDF_DUPLEX_PYTHON` 环境变量。
+Python 3.10+ 必须已安装；程序不会自动在其他磁盘安装 Python。
 
 也可以直接下载 Releases 里的打包版，双击 `PDF双面打印.exe`，无需安装 Python。
 
@@ -53,7 +63,7 @@ Python 3.10+ must be installed and available as `py` or `python`.
 
 ```bat
 .venv\Scripts\python.exe -m pip install pyinstaller
-tools\build_exe.bat
+tools\build_exe.bat "D:\PythonEnvs\PDFDuplexPrint"
 ```
 
 产物位于 `dist\PDF双面打印\`，整个目录可拷贝分发。

@@ -561,6 +561,10 @@ def validate_printer_connection(printer_name: str, options: "PrinterOptions") ->
     hdc = None
     try:
         hdc, _devmode_buffer = _create_printer_dc(printer_name, options)
+        if (int(_gdi32.GetDeviceCaps(hdc, HORZRES)) <= 0
+                or int(_gdi32.GetDeviceCaps(hdc, VERTRES)) <= 0):
+            raise PrintError(
+                f"打印机「{printer_name}」未返回有效的可打印区域，请检查驱动或纸张设置。")
     except PrintError:
         raise
     except Exception as exc:
@@ -934,6 +938,19 @@ class GdiPrinter:
             if printable_w <= 0 or printable_h <= 0:
                 raise PrintError("无法获取打印机可打印区域，请检查打印机驱动。")
 
+            # 先渲染首面，再调用 StartDoc。渲染失败时不会创建一个随后被
+            # AbortDoc 删除的“幽灵任务”，用户可以直接看到真实 PDF 错误。
+            first_page = doc[side_order[0] - 1]
+            try:
+                first_raster = _rasterize(
+                    first_page, self.options.dpi, self.options.color_mode,
+                    ink_saver=getattr(self.options, "ink_saver", False),
+                    annots=getattr(self.options, "annots", True),
+                )
+            except Exception as exc:
+                raise PrintError(
+                    f"渲染 PDF 第 {side_order[0]} 页失败，未提交打印任务：{exc}") from exc
+
             doc_info = _DOCINFOW()
             doc_info.cbSize = ctypes.sizeof(_DOCINFOW)
             doc_info.lpszDocName = job_name
@@ -953,14 +970,17 @@ class GdiPrinter:
                     time.sleep(0.2)
 
                 page = doc[rel - 1]
-                try:
-                    raster = _rasterize(
-                        page, self.options.dpi, self.options.color_mode,
-                        ink_saver=getattr(self.options, "ink_saver", False),
-                        annots=getattr(self.options, "annots", True),
-                    )
-                except Exception as exc:
-                    raise PrintError(f"渲染 PDF 第 {rel} 页失败：{exc}") from exc
+                if index == 1:
+                    raster = first_raster
+                else:
+                    try:
+                        raster = _rasterize(
+                            page, self.options.dpi, self.options.color_mode,
+                            ink_saver=getattr(self.options, "ink_saver", False),
+                            annots=getattr(self.options, "annots", True),
+                        )
+                    except Exception as exc:
+                        raise PrintError(f"渲染 PDF 第 {rel} 页失败：{exc}") from exc
                 dest = _fit_rect(raster.width, raster.height, printable_w, printable_h)
 
                 bmi = _BITMAPINFOHEADER()

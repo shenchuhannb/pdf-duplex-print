@@ -43,11 +43,13 @@ Windows 平台的 PDF 批量打印工具：用**普通单面打印机**实现**�
 run.bat
 ```
 
-首次运行会询问虚拟环境目录；按回车使用项目目录下的 `.venv`，也可以选择
-`D:\PythonEnvs\PDFDuplexPrint` 等统一环境目录。选择会保存到本地
-`.pdf-duplex-env`（不会提交到 Git），以后直接双击即可复用。
+启动器会自动检测并复用环境，顺序为：已保存的环境、项目目录 `.venv`、
+`%LOCALAPPDATA%\PDFDuplexPrint\venv`、`%USERPROFILE%\.venvs\PDFDuplexPrint`
+和 `%USERPROFILE%\Envs\PDFDuplexPrint`。找到后不会重复创建或安装新的 Python。
+如果都不存在，才会在项目目录创建 `.venv`，并把路径保存到本地
+`.pdf-duplex-env`（不会提交到 Git）。
 
-也可以显式指定或重置环境：
+也可以显式指定环境，或重置后让启动器重新自动检测：
 
 ```bat
 run.bat "D:\PythonEnvs\PDFDuplexPrint"

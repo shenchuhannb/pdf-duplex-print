@@ -5,20 +5,28 @@ cd /d "%~dp0"
 set "ROOT=%~dp0"
 set "ENV_CONFIG=%ROOT%.pdf-duplex-env"
 set "VENV="
+set "EXPLICIT_ENV="
 
 if /I "%~1"=="--reset-env" (
     if exist "%ENV_CONFIG%" del /q "%ENV_CONFIG%"
     shift
 )
-if not "%~1"=="" set "VENV=%~1"
+if not "%~1"=="" (
+    set "VENV=%~1"
+    set "EXPLICIT_ENV=1"
+)
 if not defined VENV if exist "%ENV_CONFIG%" set /p "VENV="<"%ENV_CONFIG%"
+if defined VENV if not defined EXPLICIT_ENV if not exist "%VENV%\Scripts\python.exe" set "VENV="
 
 if not defined VENV (
-    echo Choose the virtual environment directory.
-    echo Press Enter to use the project default:
-    echo %ROOT%.venv
-    set /p "VENV=Environment path: "
-    if not defined VENV set "VENV=%ROOT%.venv"
+    call :detect_existing_env
+)
+
+if not defined VENV (
+    set "VENV=%ROOT%.venv"
+    echo [INFO] No existing project environment found.
+    echo [INFO] The new environment will be created at:
+    echo %VENV%
     >"%ENV_CONFIG%" echo %VENV%
 )
 
@@ -76,3 +84,21 @@ if errorlevel 1 (
 if not exist "%PYW%" set "PYW=%PY%"
 start "" "%PYW%" "%ROOT%pdf_duplex_print.py"
 endlocal
+exit /b 0
+
+:detect_existing_env
+rem Detection order: saved path, project venv, then common user-managed locations.
+for %%E in (
+    "%ROOT%.venv"
+    "%LOCALAPPDATA%\PDFDuplexPrint\venv"
+    "%USERPROFILE%\.venvs\PDFDuplexPrint"
+    "%USERPROFILE%\Envs\PDFDuplexPrint"
+) do (
+    if not defined VENV if exist "%%~E\Scripts\python.exe" (
+        set "VENV=%%~E"
+        echo [INFO] Detected existing environment:
+        echo %%~E
+        >"%ENV_CONFIG%" echo %%~E
+    )
+)
+exit /b 0

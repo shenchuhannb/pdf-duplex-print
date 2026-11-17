@@ -7,6 +7,7 @@ from core_utils import (
     PdfError, format_page_list, is_pdf_path, is_word_path, is_wps_path,
     mm_to_pt, parse_page_range, pt_to_mm, split_drop_data,
 )
+from ui_worker import split_conversion_records
 
 
 class TestParsePageRange:
@@ -106,3 +107,13 @@ class TestUnitConvert:
         assert abs(mm_to_pt(25.4) - 72.0) < 1e-9
         assert abs(pt_to_mm(72.0) - 25.4) < 1e-9
         assert abs(pt_to_mm(mm_to_pt(210.0)) - 210.0) < 1e-9
+
+
+def test_failed_word_does_not_block_ready_pdf():
+    pending, failed = split_conversion_records([
+        {"kind": "pdf", "pdf_path": "ready.pdf"},
+        {"kind": "word", "pdf_path": "", "status": "转换失败"},
+        {"kind": "word", "pdf_path": "", "status": "转换中…"},
+    ])
+    assert [item["kind"] for item in pending] == ["word"]
+    assert len(failed) == 1

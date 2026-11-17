@@ -80,6 +80,20 @@ from ui_helpers import (
 _logger = logging.getLogger("pdf_duplex")
 
 
+def split_conversion_records(records: List[dict]) -> Tuple[List[dict], List[dict]]:
+    """Split unconverted office/image records into pending and failed groups."""
+    conversion_files = [
+        record for record in records
+        if record.get("kind") in ("word", "wps", "image")
+        and not record.get("pdf_path")
+    ]
+    failed = [record for record in conversion_files
+              if record.get("status") == "转换失败"]
+    pending = [record for record in conversion_files
+               if record.get("status") != "转换失败"]
+    return pending, failed
+
+
 class WorkerMixin:
     # ------------------------------------------------------------- UI 队列
     def _post(self, item: tuple) -> None:
@@ -278,27 +292,23 @@ class WorkerMixin:
             return
 
         # Word/WPS/图片必须先转成 PDF 才能确定页数与整批翻面顺序
-        pending_word = [f for f in self.files
-                        if f.get("kind") in ("word", "wps", "image")
-                        and not f.get("pdf_path")]
+        pending_word, failed = split_conversion_records(self.files)
         if pending_word:
-            failed = [f for f in pending_word if f.get("status") == "转换失败"]
             self._start_word_conversions()
-            if failed:
-                names = "、".join(os.path.basename(f["path"]) for f in failed[:5])
-                messagebox.showerror(
-                    "文件转换失败",
-                    f"以下文件未能转换为 PDF：{names}\n\n"
-                    "Word/WPS 请安装/修复 Microsoft Word 或 WPS，或手动另存为 PDF "
-                    "后重新导入；图片请确认文件未损坏。",
-                    parent=self.root)
-            else:
-                messagebox.showinfo(
-                    "文件正在转换",
-                    f"还有 {len(pending_word)} 个文件正在转换为 PDF，"
-                    "请等状态变为“已转换”后再开始打印。",
-                    parent=self.root)
+            detail = (f"\n已有 {len(failed)} 个文件转换失败，本次将跳过这些文件。"
+                      if failed else "")
+            messagebox.showinfo(
+                "文件正在转换",
+                f"还有 {len(pending_word)} 个文件正在转换为 PDF，"
+                f"请等状态变为“已转换”后再开始打印。{detail}",
+                parent=self.root)
             return
+        if failed:
+            names = "、".join(os.path.basename(f["path"]) for f in failed[:5])
+            suffix = f" 等 {len(failed)} 个" if len(failed) > 5 else ""
+            self._append_log(
+                f"已跳过 {len(failed)} 个转换失败文件：{names}{suffix}。"
+                "其余 PDF 文件仍可继续打印。")
 
         try:
             copies = int(float(str(self.vars["copies"].get()).strip()))

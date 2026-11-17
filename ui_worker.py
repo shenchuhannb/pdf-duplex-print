@@ -281,6 +281,20 @@ class WorkerMixin:
 
     # ---------------------------------------------------------- 打印执行
     def start_print(self) -> None:
+        """Start printing and surface unexpected UI-thread failures."""
+        try:
+            self._start_print_impl()
+        except Exception as exc:
+            _logger.exception("开始打印入口异常")
+            try:
+                self._set_busy(False)
+                self.status_var.set("开始打印失败")
+                self._append_log(f"开始打印失败：{exc}")
+                messagebox.showerror("开始打印失败", str(exc), parent=self.root)
+            except Exception:
+                _logger.exception("显示开始打印入口错误失败")
+
+    def _start_print_impl(self) -> None:
         """校验所有输入并启动后台打印线程（界面不冻结）。"""
         _logger.info(
             "收到开始打印请求：active=%s files=%s printer=%s",
@@ -448,8 +462,12 @@ class WorkerMixin:
             snapshot["printer"], len(jobs), copies,
             snapshot["manual_duplex"], snapshot["wait_mode"],
         )
-        self.worker = threading.Thread(target=self._worker_main, args=(snapshot,), daemon=True)
+        self.worker = threading.Thread(
+            target=self._worker_entry, args=(snapshot,),
+            name="PDFDuplexPrintWorker", daemon=True,
+        )
         self.worker.start()
+        _logger.info("后台打印线程已启动：alive=%s", self.worker.is_alive())
 
     def _paper_is_landscape(self) -> bool:
         orientation = str(self.vars["orientation"].get() or "auto")
@@ -498,6 +516,14 @@ class WorkerMixin:
         self._append_log("用户请求取消打印。")
 
     # ------------------------------------------------------------- 工作线程
+    def _worker_entry(self, snapshot: dict) -> None:
+        try:
+            self._worker_main(snapshot)
+        except BaseException:
+            _logger.exception("打印工作线程异常退出")
+            self._post(("busy", False))
+            self._post(("status", "打印线程异常退出"))
+
     def _worker_main(self, snapshot: dict) -> None:
         _logger.info(
             "打印工作线程启动：printer=%s jobs=%s",

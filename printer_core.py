@@ -494,8 +494,9 @@ def get_printer_status(printer_name: str) -> Dict[str, object]:
     data["flags"] = status
     data["jobs"] = jobs
 
-    if attributes & getattr(win32print, "PRINTER_ATTRIBUTE_WORK_OFFLINE", 0x80):
-        data["offline"] = True
+    # PRINTER_ATTRIBUTE_WORK_OFFLINE is sticky for some USB drivers even while
+    # the spooler reports the device as ready. Use the live status bit here;
+    # otherwise healthy local printers are incorrectly rejected as offline.
     if status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
         data["offline"] = True
     if status & getattr(win32print, "PRINTER_STATUS_PAPER_JAM", 0x8):
@@ -658,10 +659,8 @@ def wait_for_print_job(
 
         try:
             printer_info = win32print.GetPrinter(handle, 2) or {}
-            attributes = int(printer_info.get("Attributes") or 0)
             printer_status = int(printer_info.get("Status") or 0)
-            if attributes & getattr(win32print, "PRINTER_ATTRIBUTE_WORK_OFFLINE", 0x80) or \
-                    printer_status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
+            if printer_status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
                 _try_cancel_job(printer_name, job_id)
                 raise PrinterOfflineError(
                     f"打印机「{printer_name}」已脱机，打印任务已取消。\n请检查电源与连接后重新打印。"

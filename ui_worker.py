@@ -282,6 +282,10 @@ class WorkerMixin:
     # ---------------------------------------------------------- 打印执行
     def start_print(self) -> None:
         """校验所有输入并启动后台打印线程（界面不冻结）。"""
+        _logger.info(
+            "收到开始打印请求：active=%s files=%s printer=%s",
+            self.print_active, len(self.files), self.current_printer(),
+        )
         if self.print_active:
             return
         printer = self.current_printer()
@@ -439,6 +443,11 @@ class WorkerMixin:
             f"开始打印：{len(jobs)} 个文件，份数 {copies}，"
             f"{flow_names.get(snapshot['print_flow'], '整批翻面·打完全部再取纸')}"
             f"{'，按份逐份执行' if copies > 1 and snapshot['copy_exec_on'] else ''}")
+        _logger.info(
+            "开始后台打印：printer=%s jobs=%s copies=%s manual_duplex=%s wait_mode=%s",
+            snapshot["printer"], len(jobs), copies,
+            snapshot["manual_duplex"], snapshot["wait_mode"],
+        )
         self.worker = threading.Thread(target=self._worker_main, args=(snapshot,), daemon=True)
         self.worker.start()
 
@@ -490,6 +499,10 @@ class WorkerMixin:
 
     # ------------------------------------------------------------- 工作线程
     def _worker_main(self, snapshot: dict) -> None:
+        _logger.info(
+            "打印工作线程启动：printer=%s jobs=%s",
+            snapshot.get("printer"), len(snapshot.get("jobs") or []),
+        )
         temp_dir = ""
         prepared: List[dict] = []
         completed = False
@@ -975,6 +988,10 @@ class WorkerMixin:
         """提交一个打印任务并按设置等待完成（队列监听超时自动降级）。"""
         if not order:
             return
+        _logger.info(
+            "准备提交打印阶段：printer=%s job=%s pdf=%s pages=%s",
+            snapshot["printer"], job_name, pdf_path, len(order),
+        )
         self._raise_if_stopped()
         self._post(("status", phase_text))
         self._post(("log", f"{phase_text}：共 {len(order)} 个输出面。"))

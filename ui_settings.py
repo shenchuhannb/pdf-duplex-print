@@ -835,22 +835,12 @@ class SettingsPanelMixin:
             pass
 
     def _update_start_state(self) -> None:
-        """开始打印按钮的禁用态：无文件或仍有文件未转换时置灰。
-
-        旧版无论列表是否为空，“开始打印”都保持可点，用户点下才弹提示；
-        现在空列表/转换中直接禁用，主操作的可用性一目了然。
-        """
+        """只在打印执行中禁用开始按钮，让校验失败仍能给出明确反馈。"""
         button = getattr(self, "start_btn", None)
         if button is None:
             return
-        if getattr(self, "print_active", False):
-            self._set_widget_state(button, "disabled")
-            return
-        pending = [f for f in self.files
-                   if f.get("kind") in ("word", "wps", "image")
-                   and not f.get("pdf_path") and f.get("status") != "转换失败"]
-        self._set_widget_state(button, "normal" if self.files and not pending
-                               else "disabled")
+        self._set_widget_state(
+            button, "disabled" if getattr(self, "print_active", False) else "normal")
 
     def _sync_widget_states(self) -> None:
         mode = str(self.vars["range_mode"].get())

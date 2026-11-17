@@ -223,9 +223,15 @@ class WorkerMixin:
     def _set_busy(self, busy: bool) -> None:
         self.print_active = busy
         state = "disabled" if busy else "normal"
-        for button in (self.add_file_btn, self.add_dir_btn, self.remove_btn, self.clear_btn,
-                       self.up_btn, self.down_btn, self.dedupe_btn, self.explore_btn,
-                       self.refresh_btn, self.restore_btn if hasattr(self, "restore_btn") else None):
+        for button in (
+                getattr(self, "add_file_btn", None),
+                getattr(self, "add_dir_btn", None),
+                getattr(self, "remove_btn", None),
+                getattr(self, "clear_btn", None),
+                getattr(self, "more_btn", None),
+                getattr(self, "refresh_btn", None),
+                getattr(self, "restore_btn", None),
+        ):
             if button is not None:
                 button.configure(state=state)
         self.start_btn.configure(state="disabled" if busy else "normal")

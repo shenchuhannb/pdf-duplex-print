@@ -1,13 +1,46 @@
 @echo off
-rem 启动本项目（使用项目内独立 venv 的 pythonw，不依赖系统 Python 环境）
-setlocal
+setlocal EnableExtensions
 cd /d "%~dp0"
-if not exist "%~dp0.venv\Scripts\pythonw.exe" (
-    echo [错误] 未找到项目虚拟环境：%~dp0.venv\Scripts\pythonw.exe
-    echo 请先执行：python.exe -m venv "%~dp0.venv"
-    echo 然后执行： "%~dp0.venv\Scripts\python.exe" -m pip install -r "%~dp0requirements.txt"
+
+set "VENV=%~dp0.venv"
+set "PY=%VENV%\Scripts\python.exe"
+set "PYW=%VENV%\Scripts\pythonw.exe"
+
+if not exist "%PY%" (
+    echo [INFO] Creating the project virtual environment...
+    where py >nul 2>nul
+    if not errorlevel 1 (
+        py -3 -m venv "%VENV%"
+    ) else (
+        where python >nul 2>nul
+        if errorlevel 1 (
+            echo [ERROR] Python 3 was not found. Install Python 3.10+ and try again.
+            pause
+            exit /b 1
+        )
+        python -m venv "%VENV%"
+    )
+    if errorlevel 1 (
+        echo [ERROR] Failed to create the virtual environment.
+        pause
+        exit /b 1
+    )
+)
+
+if not exist "%PY%" (
+    echo [ERROR] The virtual environment is incomplete: "%PY%"
     pause
     exit /b 1
 )
-start "" "%~dp0.venv\Scripts\pythonw.exe" "%~dp0pdf_duplex_print.py"
+
+echo [INFO] Checking project dependencies...
+"%PY%" -m pip install -r "%~dp0requirements.txt"
+if errorlevel 1 (
+    echo [ERROR] Dependency installation failed. Check Python and network access.
+    pause
+    exit /b 1
+)
+
+if not exist "%PYW%" set "PYW=%PY%"
+start "" "%PYW%" "%~dp0pdf_duplex_print.py"
 endlocal

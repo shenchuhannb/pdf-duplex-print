@@ -40,10 +40,12 @@ Windows 平台的 PDF 批量打印工具：用**普通单面打印机**实现**�
 ## 安装与运行
 
 ```bat
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
 run.bat
 ```
+
+`run.bat` can be launched directly after cloning. It creates the project-local
+`.venv` on first run and installs `requirements.txt` before starting the app.
+Python 3.10+ must be installed and available as `py` or `python`.
 
 也可以直接下载 Releases 里的打包版，双击 `PDF双面打印.exe`，无需安装 Python。
 

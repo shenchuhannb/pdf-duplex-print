@@ -33,8 +33,9 @@ except ImportError:  # pragma: no cover
 
 from core_utils import PrintError, PrinterOfflineError, PrintTimeoutError, CancelledByUser
 
-JOB_POLL_INTERVAL = 3.0              # 老式 USB 驱动的队列轮询间隔（秒）
-PRINTER_STATUS_POLL_INTERVAL = 10.0  # 更慢地读取打印机/端口状态，避免驱动被连续探测
+JOB_POLL_INTERVAL = 3.0              # 打印队列轮询间隔（秒；spooler 本地调用，不探测 USB 设备）
+PRINTER_STATUS_POLL_INTERVAL = 3.0   # 打印机状态检查间隔（秒；同为 spooler 本地调用，可安全高频）
+VALIDATE_DC_TIMEOUT_SECONDS = 20.0   # 驱动/端口初始化探测的超时上限（秒）
 JOB_TIMEOUT_SECONDS = 1800.0         # 单个打印任务等待上限（秒）
 POST_JOB_SETTLE_SECONDS = 2.0        # 任务完成后的额外等待，给机械出纸留余量
 
@@ -495,9 +496,15 @@ def get_printer_status(printer_name: str) -> Dict[str, object]:
     data["flags"] = status
     data["jobs"] = jobs
 
-    # PRINTER_ATTRIBUTE_WORK_OFFLINE is sticky for some USB drivers even while
-    # the spooler reports the device as ready. Use the live status bit here;
-    # otherwise healthy local printers are incorrectly rejected as offline.
+    # 脱机判定取属性位与状态位的并集：
+    # - PRINTER_ATTRIBUTE_WORK_OFFLINE：host-based USB 驱动（如 HP P1007）在设备
+    #   关机/断连时往往只置该属性位，Status 位不更新；漏检会把任务提交给死设备，
+    #   任务堆积后楔死驱动会话，表现为打印机“宕机”需断电恢复；
+    # - PRINTER_STATUS_OFFLINE：另一部分驱动只上报状态位。
+    # 个别驱动属性位粘滞会造成“误报脱机”，但其代价（用户取消脱机模式即可）
+    # 远小于漏报的代价（驱动楔死），因此取并集。
+    if attributes & getattr(win32print, "PRINTER_ATTRIBUTE_WORK_OFFLINE", 0x80):
+        data["offline"] = True
     if status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
         data["offline"] = True
     if status & getattr(win32print, "PRINTER_STATUS_PAPER_JAM", 0x8):
@@ -553,27 +560,57 @@ def check_printer_ready(printer_name: str) -> None:
         raise PrintError(f"打印机「{printer_name}」报告缺纸，请补充纸张后重试。")
 
 
-def validate_printer_connection(printer_name: str, options: "PrinterOptions") -> None:
+def validate_printer_connection(
+    printer_name: str,
+    options: "PrinterOptions",
+    timeout: float = VALIDATE_DC_TIMEOUT_SECONDS,
+) -> None:
     """在排版前验证打印队列和 GDI 设备上下文都能正常创建。
 
     仅检查队列状态不足以发现驱动初始化失败；提前创建并立即释放一个 DC，
     可以把驱动/端口问题转换成可读错误，避免用户等待整批排版后才失败。
+
+    host-based 驱动（如 HP P1007）在设备脱机或端口异常时，CreateDC/
+    DocumentProperties 可能长时间阻塞甚至挂起，且这些阻塞调用无法被中断。
+    因此整个探测放在守护线程中执行并设置超时：超时直接抛出可读错误，
+    打印工作线程不会被驱动永久楔死（卡住的探测线程为 daemon，不阻塞退出）。
     """
     check_printer_ready(printer_name)
-    hdc = None
-    try:
-        hdc, _devmode_buffer = _create_printer_dc(printer_name, options)
-        if (int(_gdi32.GetDeviceCaps(hdc, HORZRES)) <= 0
-                or int(_gdi32.GetDeviceCaps(hdc, VERTRES)) <= 0):
-            raise PrintError(
-                f"打印机「{printer_name}」未返回有效的可打印区域，请检查驱动或纸张设置。")
-    except PrintError:
-        raise
-    except Exception as exc:
-        raise PrintError(f"无法初始化打印机驱动「{printer_name}」：{exc}") from exc
-    finally:
-        if hdc:
-            _gdi32.DeleteDC(hdc)
+
+    probe_error: List[BaseException] = []
+
+    def _probe() -> None:
+        hdc = None
+        try:
+            hdc, _devmode_buffer = _create_printer_dc(printer_name, options)
+            if (int(_gdi32.GetDeviceCaps(hdc, HORZRES)) <= 0
+                    or int(_gdi32.GetDeviceCaps(hdc, VERTRES)) <= 0):
+                probe_error.append(PrintError(
+                    f"打印机「{printer_name}」未返回有效的可打印区域，"
+                    "请检查驱动或纸张设置。"))
+        except PrintError as exc:
+            probe_error.append(exc)
+        except Exception as exc:  # 驱动层异常统一转成可读提示
+            probe_error.append(PrintError(f"无法初始化打印机驱动「{printer_name}」：{exc}"))
+        finally:
+            if hdc:
+                try:
+                    _gdi32.DeleteDC(hdc)
+                except Exception:
+                    pass
+
+    probe_thread = threading.Thread(
+        target=_probe, name="PrinterValidateProbe", daemon=True)
+    probe_thread.start()
+    probe_thread.join(timeout)
+    if probe_thread.is_alive():
+        raise PrintError(
+            f"初始化打印机「{printer_name}」驱动超时（超过 {timeout:.0f} 秒无响应）。\n"
+            "驱动或端口可能已卡死，请检查打印机电源与 USB 连接，"
+            "必要时在 Windows 服务中重启「Print Spooler」后重试。"
+        )
+    if probe_error:
+        raise probe_error[0]
 
 
 def _try_cancel_job(printer_name: str, job_id: int) -> None:
@@ -664,8 +701,12 @@ def wait_for_print_job(
             if now - last_printer_status_check >= PRINTER_STATUS_POLL_INTERVAL:
                 printer_info = win32print.GetPrinter(handle, 2) or {}
                 printer_status = int(printer_info.get("Status") or 0)
+                printer_attributes = int(printer_info.get("Attributes") or 0)
                 last_printer_status_check = now
-                if printer_status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
+                # 与预检一致：属性位（host-based 驱动关机/断连时唯一可靠信号）
+                # 与状态位取并集，任一置位即判定脱机并取消任务，避免任务堆积楔死驱动。
+                if (printer_attributes & getattr(win32print, "PRINTER_ATTRIBUTE_WORK_OFFLINE", 0x80)
+                        or printer_status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80)):
                     _try_cancel_job(printer_name, job_id)
                     raise PrinterOfflineError(
                         f"打印机「{printer_name}」已脱机，打印任务已取消。\n"

@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 """printer_core 纯函数回归：DEVMODE 字段、页序校验、任务状态解析、缩放几何。"""
 
+import threading
+import types
+
 import pytest
 
 win32print = pytest.importorskip("win32print", reason="需要 pywin32")
 
+import printer_core
 from core_utils import PrintError
 from printer_core import (
     PrinterOptions, _fit_rect, _job_status_flags, devmode_field_updates,
@@ -88,3 +92,84 @@ class TestFitRect:
     def test_no_upscale_distortion(self):
         x, y, w, h = _fit_rect(100, 100, 400, 200)
         assert abs(w / h - 1.0) < 0.01
+
+
+class TestOfflineDetectionUnion:
+    """★ 安全线：脱机判定必须取属性位与状态位的并集。
+
+    HP P1007 等 host-based USB 驱动在设备关机/断连时往往只置
+    PRINTER_ATTRIBUTE_WORK_OFFLINE 属性位，Status 位不更新；
+    只信状态位会把脱机设备放行，任务堆积后楔死驱动会话。
+    """
+
+    def _fake_printer(self, monkeypatch, status=0, attributes=0):
+        fake = types.SimpleNamespace(**{
+            name: getattr(win32print, name)
+            for name in dir(win32print) if name.isupper()
+        })
+        fake.OpenPrinter = lambda name: object()
+        fake.ClosePrinter = lambda handle: None
+        fake.GetPrinter = lambda handle, level: {
+            "Status": status, "Attributes": attributes, "cJobs": 0,
+        }
+        monkeypatch.setattr(printer_core, "win32print", fake)
+        monkeypatch.setattr(printer_core, "get_default_printer", lambda: "")
+
+    def test_work_offline_attribute_marks_offline(self, monkeypatch):
+        self._fake_printer(
+            monkeypatch, status=0,
+            attributes=win32print.PRINTER_ATTRIBUTE_WORK_OFFLINE)
+        assert printer_core.get_printer_status("P1007")["offline"] is True
+
+    def test_status_bit_marks_offline(self, monkeypatch):
+        self._fake_printer(
+            monkeypatch, status=win32print.PRINTER_STATUS_OFFLINE, attributes=0)
+        assert printer_core.get_printer_status("P1007")["offline"] is True
+
+    def test_ready_printer_not_offline(self, monkeypatch):
+        self._fake_printer(monkeypatch, status=0, attributes=0)
+        assert printer_core.get_printer_status("P1007")["offline"] is False
+
+
+class TestValidatePrinterConnection:
+    """驱动探测必须有超时兜底：host-based 驱动的阻塞调用不可中断。"""
+
+    def _stub_ready(self, monkeypatch):
+        monkeypatch.setattr(printer_core, "check_printer_ready", lambda name: None)
+
+    def test_timeout_raises_readable_error(self, monkeypatch):
+        self._stub_ready(monkeypatch)
+        hang = threading.Event()
+        monkeypatch.setattr(
+            printer_core, "_create_printer_dc",
+            lambda name, options: hang.wait(30))
+        try:
+            with pytest.raises(PrintError, match="超时"):
+                printer_core.validate_printer_connection(
+                    "P1007", PrinterOptions(), timeout=0.3)
+        finally:
+            hang.set()  # 释放探测线程，避免悬挂到测试进程退出
+
+    def test_driver_error_wrapped(self, monkeypatch):
+        self._stub_ready(monkeypatch)
+
+        def boom(name, options):
+            raise RuntimeError("driver broken")
+
+        monkeypatch.setattr(printer_core, "_create_printer_dc", boom)
+        with pytest.raises(PrintError, match="无法初始化打印机驱动"):
+            printer_core.validate_printer_connection(
+                "P1007", PrinterOptions(), timeout=5.0)
+
+    def test_success_path(self, monkeypatch):
+        self._stub_ready(monkeypatch)
+        monkeypatch.setattr(
+            printer_core, "_create_printer_dc",
+            lambda name, options: (12345, None))
+        fake_gdi = types.SimpleNamespace(
+            GetDeviceCaps=lambda hdc, index: 100,
+            DeleteDC=lambda hdc: None,
+        )
+        monkeypatch.setattr(printer_core, "_gdi32", fake_gdi)
+        printer_core.validate_printer_connection(
+            "P1007", PrinterOptions(), timeout=5.0)

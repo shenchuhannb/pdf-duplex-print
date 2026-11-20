@@ -11,7 +11,7 @@ win32print = pytest.importorskip("win32print", reason="需要 pywin32")
 import printer_core
 from core_utils import PrintError
 from printer_core import (
-    PrinterOptions, _fit_rect, _job_status_flags, devmode_field_updates,
+    PrinterOptions, _fit_rect, _job_status_flags, _paper_dest_rect, devmode_field_updates,
     validate_side_order,
 )
 
@@ -92,6 +92,98 @@ class TestFitRect:
     def test_no_upscale_distortion(self):
         x, y, w, h = _fit_rect(100, 100, 400, 200)
         assert abs(w / h - 1.0) < 0.01
+
+
+class TestPaperDestRect:
+    """整纸位图必须映射到物理纸张，而不是再次适配可打印区（防二次缩小）。"""
+
+    # HP LaserJet P1007 实测 caps（600dpi，A4）
+    P1007 = dict(printable_w=4736, printable_h=6824,
+                 phys_w=4961, phys_h=7016, off_x=94, off_y=94)
+
+    def test_p1007_maps_full_physical_paper(self):
+        # A4@300dpi 位图 2481x3508
+        x, y, w, h = _paper_dest_rect(2481, 3508, **self.P1007)
+        assert w == 4961
+        assert abs(h - 7016) <= 2
+        assert x == -94                      # 纸的左上角在可打印区原点之外
+        assert -96 <= y <= -92
+        # 可打印区原点(0,0)对应纸上的 (94,94)，内容不会再被二次缩放
+        assert x + 94 == 0
+
+    def test_zero_offset_virtual_printer_full_page(self):
+        # Microsoft Print to PDF：无不可打印边，整纸即整页
+        x, y, w, h = _paper_dest_rect(
+            2481, 3508, printable_w=4961, printable_h=7016,
+            phys_w=4961, phys_h=7016, off_x=0, off_y=0)
+        assert x == 0 and abs(y) <= 2 and w == 4961
+        assert abs(h - 7016) <= 2
+
+    def test_fallback_when_physical_caps_missing(self):
+        args = dict(printable_w=1000, printable_h=1000,
+                    phys_w=0, phys_h=0, off_x=0, off_y=0)
+        assert _paper_dest_rect(100, 200, **args) == _fit_rect(100, 200, 1000, 1000)
+
+    def test_fallback_when_caps_inconsistent(self):
+        # 可打印区 + 偏移超出物理纸：驱动数据不可信，退回旧行为
+        args = dict(printable_w=4736, printable_h=6824,
+                    phys_w=4000, phys_h=6000, off_x=94, off_y=94)
+        assert _paper_dest_rect(2481, 3508, **args) == _fit_rect(
+            2481, 3508, 4736, 6824)
+
+    def test_no_second_shrink(self):
+        """整纸恰好覆盖整物理纸：GDI 不再引入第二次“适配可打印区”缩放。
+
+        旧链路在 P1007 上会把排版好的 95.5% 再缩成约 91.1%。
+        """
+        x, y, w, h = _paper_dest_rect(2481, 3508, **self.P1007)
+        assert abs(w - 4961) <= 1 and abs(h - 7016) <= 2
+        old = _fit_rect(2481, 3508, 4736, 6824)   # 旧行为：再适配可打印区
+        assert old[2] < w * 0.97
+
+
+class TestPrintOncePaperMapping:
+    """端到端（假 GDI）：_print_once 必须把整纸画到物理纸坐标，而非可打印区。"""
+
+    def test_p1007_dest_uses_negative_offset(self, monkeypatch):
+        fitz = pytest.importorskip("fitz")
+        import ctypes
+
+        caps = {8: 4736, 10: 6824, 110: 4961, 111: 7016, 112: 94, 113: 94}
+        calls = []
+        monkeypatch.setattr(printer_core, "_create_printer_dc",
+                            lambda name, options: (12345, None))
+        gdi = printer_core._gdi32
+        monkeypatch.setattr(gdi, "GetDeviceCaps", lambda hdc, i: caps.get(i, 0))
+        monkeypatch.setattr(gdi, "SetMapMode", lambda hdc, mode: 1)
+        monkeypatch.setattr(gdi, "SetStretchBltMode", lambda hdc, mode: 1)
+        monkeypatch.setattr(gdi, "SetBrushOrgEx", lambda hdc, x, y, pt: 1)
+        monkeypatch.setattr(gdi, "StartDocW", lambda hdc, info: 7)
+        monkeypatch.setattr(gdi, "StartPage", lambda hdc: 1)
+        monkeypatch.setattr(gdi, "EndPage", lambda hdc: 1)
+        monkeypatch.setattr(gdi, "EndDoc", lambda hdc: 1)
+        monkeypatch.setattr(gdi, "DeleteDC", lambda hdc: None)
+
+        def fake_stretch(hdc, x, y, w, h, sx, sy, sw, sh, bits, bmi, usage, rop):
+            header = ctypes.cast(
+                bmi, ctypes.POINTER(printer_core._BITMAPINFOHEADER)).contents
+            calls.append((x, y, w, h, abs(header.biWidth), abs(header.biHeight)))
+            return h
+        monkeypatch.setattr(gdi, "StretchDIBits", fake_stretch)
+
+        doc = fitz.open()
+        doc.new_page(width=595.28, height=841.89)   # A4
+        printer = printer_core.GdiPrinter("HP LaserJet P1007", PrinterOptions(dpi=72))
+        printer._print_once(doc, [1], "mapping-test", threading.Event())
+        doc.close()
+
+        assert len(calls) == 1
+        x, y, w, h, src_w, src_h = calls[0]
+        assert (x, y, w, h) == _paper_dest_rect(
+            src_w, src_h, 4736, 6824, 4961, 7016, 94, 94)
+        # 与旧行为的本质区别：负偏移 + 绘制宽度超过可打印区（覆盖整张纸）
+        assert x < 0 and y < 0
+        assert w > 4736 and h > 6824
 
 
 class TestOfflineDetectionUnion:

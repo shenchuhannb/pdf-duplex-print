@@ -51,6 +51,10 @@ RETRY_BACKOFF_SECONDS = 0.5          # 退避基数（线性递增）
 # GDI / Win32 常量
 HORZRES = 8
 VERTRES = 10
+PHYSICALWIDTH = 110
+PHYSICALHEIGHT = 111
+PHYSICALOFFSETX = 112
+PHYSICALOFFSETY = 113
 MM_TEXT = 1
 STRETCH_HALFTONE = 4
 SRCCOPY = 0x00CC0020
@@ -280,6 +284,31 @@ def _fit_rect(src_w: int, src_h: int, dst_w: int, dst_h: int) -> Tuple[int, int,
     return x, y, width, height
 
 
+def _paper_dest_rect(
+    src_w: int, src_h: int,
+    printable_w: int, printable_h: int,
+    phys_w: int, phys_h: int, off_x: int, off_y: int,
+) -> Tuple[int, int, int, int]:
+    """整纸位图在打印机 DC 上的目标矩形（设备像素）。
+
+    排版后的 PDF 页面是“整张纸”，内容已按驱动可打印区内缩放好；
+    打印机 DC 的 (0,0) 是可打印区左上角，因此整纸必须画到
+    (-off_x, -off_y, 物理纸宽, 物理纸高)，内容位置才与排版一致。
+    若错误地适配进可打印区，等于把可打印区缩放做两次（P1007 实测
+    95.5% 被缩成 91.1%），比原生 PDF 打印更小、白边更大。
+    驱动不报告物理尺寸/偏移时退回旧的“适配可打印区”行为。
+    """
+    if (phys_w <= 0 or phys_h <= 0 or off_x < 0 or off_y < 0
+            or phys_w < printable_w + off_x or phys_h < printable_h + off_y):
+        return _fit_rect(src_w, src_h, printable_w, printable_h)
+    scale = min(phys_w / src_w, phys_h / src_h)
+    width = max(1, int(round(src_w * scale)))
+    height = max(1, int(round(src_h * scale)))
+    x = -off_x + (phys_w - width) // 2
+    y = -off_y + (phys_h - height) // 2
+    return x, y, width, height
+
+
 def _prepare_dib(pixmap):
     """把 PyMuPDF 的紧密 RGB 采样补齐为 GDI 要求的 4 字节对齐扫描行。
 
@@ -443,10 +472,10 @@ def get_printable_insets_pt(printer_name: str) -> Optional[Tuple[float, float, f
         vert = int(_gdi32.GetDeviceCaps(hdc, 10))             # VERTRES
         dpi_x = int(_gdi32.GetDeviceCaps(hdc, 88)) or 300     # LOGPIXELSX
         dpi_y = int(_gdi32.GetDeviceCaps(hdc, 90)) or 300     # LOGPIXELSY
-        phys_w = int(_gdi32.GetDeviceCaps(hdc, 110))          # PHYSICALWIDTH
-        phys_h = int(_gdi32.GetDeviceCaps(hdc, 111))          # PHYSICALHEIGHT
-        off_x = int(_gdi32.GetDeviceCaps(hdc, 112))           # PHYSICALOFFSETX
-        off_y = int(_gdi32.GetDeviceCaps(hdc, 113))           # PHYSICALOFFSETY
+        phys_w = int(_gdi32.GetDeviceCaps(hdc, PHYSICALWIDTH))
+        phys_h = int(_gdi32.GetDeviceCaps(hdc, PHYSICALHEIGHT))
+        off_x = int(_gdi32.GetDeviceCaps(hdc, PHYSICALOFFSETX))
+        off_y = int(_gdi32.GetDeviceCaps(hdc, PHYSICALOFFSETY))
         if horz <= 0 or vert <= 0 or phys_w <= 0 or phys_h <= 0:
             return None
         scale_x, scale_y = 72.0 / dpi_x, 72.0 / dpi_y
@@ -1011,6 +1040,10 @@ class GdiPrinter:
             printable_h = _gdi32.GetDeviceCaps(hdc, VERTRES)
             if printable_w <= 0 or printable_h <= 0:
                 raise PrintError("无法获取打印机可打印区域，请检查打印机驱动。")
+            phys_w = _gdi32.GetDeviceCaps(hdc, PHYSICALWIDTH)
+            phys_h = _gdi32.GetDeviceCaps(hdc, PHYSICALHEIGHT)
+            off_x = _gdi32.GetDeviceCaps(hdc, PHYSICALOFFSETX)
+            off_y = _gdi32.GetDeviceCaps(hdc, PHYSICALOFFSETY)
 
             # 先渲染首面，再调用 StartDoc。渲染失败时不会创建一个随后被
             # AbortDoc 删除的“幽灵任务”，用户可以直接看到真实 PDF 错误。
@@ -1057,7 +1090,9 @@ class GdiPrinter:
                         )
                     except Exception as exc:
                         raise PrintError(f"渲染 PDF 第 {rel} 页失败：{exc}") from exc
-                dest = _fit_rect(raster.width, raster.height, printable_w, printable_h)
+                dest = _paper_dest_rect(
+                    raster.width, raster.height, printable_w, printable_h,
+                    phys_w, phys_h, off_x, off_y)
 
                 bmi = _BITMAPINFOHEADER()
                 bmi.biSize = ctypes.sizeof(_BITMAPINFOHEADER)

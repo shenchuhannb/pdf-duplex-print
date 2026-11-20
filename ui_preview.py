@@ -69,6 +69,10 @@ from ui_helpers import (
     WINDOW_DEFAULT_SIZE,
     SCALE_LABELS,
     SCALE_LABEL_TO_VALUE,
+    NUP_LABELS,
+    NUP_LABEL_TO_VALUE,
+    ORIENTATION_LABELS,
+    ORIENTATION_LABEL_TO_VALUE,
     RANGE_LABELS,
     RANGE_LABEL_TO_VALUE,
     PAGE_ORDER_LABELS,
@@ -87,20 +91,20 @@ class PreviewMixin:
         self._layout_preview_tool(width)
 
     def _layout_preview_tool(self, width: int) -> None:
-        """极窄预览列（<510px）才把翻页/缩放拆成两行。
-
-        1024 宽主界面预览列内宽约 525px，缩短下拉与文案后单行即可放下，
-        这样工具条高度固定，缩放徽标/翻页控件不会随窗口尺寸跳动。
-        """
+        """常规两行：翻页/缩放 + 拼版/方向；窄窗口再把缩放独立成行。"""
         if not hasattr(self, "page_group"):
             return
-        if width < self._px(510):
+        compact = width < self._px(510)
+        if compact:
             self.tool_sep.grid_remove()
             self.zoom_group.grid_configure(row=1, column=0, sticky="w",
                                            pady=(self._px(GAP_S), 0))
         else:
             self.zoom_group.grid_configure(row=0, column=2, sticky="w", pady=0)
             self.tool_sep.grid()
+        self.layout_group.grid_configure(
+            row=2 if compact else 1, column=0, columnspan=3, sticky="w",
+            pady=(self._px(GAP_S), 0))
         # 状态条宽度不足时隐藏快捷键提示（信息随窗口宽度增减，不推挤其它段）
         if hasattr(self, "shortcut_hint_label"):
             try:
@@ -111,6 +115,18 @@ class PreviewMixin:
                     self.shortcut_hint_label.pack(side="right", padx=self._px(8))
             except tk.TclError:
                 pass
+
+    def _on_nup_selected(self, _event=None) -> None:
+        value = NUP_LABEL_TO_VALUE.get(str(self.nup_label_var.get()))
+        if value is not None:
+            self.vars["nup"].set(str(value))
+        self._on_setting_change()
+
+    def _on_orientation_selected(self, _event=None) -> None:
+        value = ORIENTATION_LABEL_TO_VALUE.get(str(self.orientation_label_var.get()))
+        if value:
+            self.vars["orientation"].set(value)
+        self._on_setting_change()
 
     def _on_preview_view_change(self) -> None:
         """单页/双页并排切换：立即重绘（不重新打开 PDF）。"""
@@ -194,6 +210,29 @@ class PreviewMixin:
         self.zoom_group.grid(row=0, column=2, sticky="w")
         self.tool_sep = ttk.Separator(tool, orient="vertical", style="VSep.TSeparator")
         self.tool_sep.grid(row=0, column=1, sticky="ns", padx=self._px(GAP), pady=self._px(2))
+        self.layout_group = ttk.Frame(tool)
+        self.layout_group.grid(row=1, column=0, columnspan=3, sticky="w",
+                               pady=(self._px(GAP_S), 0))
+
+        ttk.Label(self.layout_group, text="拼版").grid(row=0, column=0, sticky="w")
+        self.nup_label_var = tk.StringVar(
+            value=NUP_LABELS.get(self._int_setting("nup", 1), NUP_LABELS[1]))
+        self.nup_quick_combo = ttk.Combobox(
+            self.layout_group, textvariable=self.nup_label_var, state="readonly", width=7,
+            values=tuple(NUP_LABELS[n] for n in NUP_CHOICES))
+        self.nup_quick_combo.grid(row=0, column=1, sticky="w",
+                                  padx=(self._px(GAP_S), self._px(GAP)))
+        self.nup_quick_combo.bind("<<ComboboxSelected>>", self._on_nup_selected)
+        ttk.Label(self.layout_group, text="方向").grid(row=0, column=2, sticky="w")
+        orientation = str(self.vars["orientation"].get() or "auto")
+        self.orientation_label_var = tk.StringVar(
+            value=ORIENTATION_LABELS.get(orientation, ORIENTATION_LABELS["auto"]))
+        self.orientation_combo = ttk.Combobox(
+            self.layout_group, textvariable=self.orientation_label_var,
+            state="readonly", width=5, values=tuple(ORIENTATION_LABELS.values()))
+        self.orientation_combo.grid(row=0, column=3, sticky="w",
+                                    padx=(self._px(GAP_S), 0))
+        self.orientation_combo.bind("<<ComboboxSelected>>", self._on_orientation_selected)
 
         ttk.Label(self.page_group, text="页", width=2, anchor="e").grid(
             row=0, column=0, padx=(0, self._px(GAP_S)))

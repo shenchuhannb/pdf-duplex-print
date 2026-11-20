@@ -43,7 +43,7 @@ PAPER_CODES = {
     CUSTOM_PAPER_NAME: 256,   # DMPAPER_USER
 }
 
-NUP_CHOICES = (1, 2, 4, 6, 9, 16)
+NUP_CHOICES = (1, 2, 4, 6, 8, 9, 16)
 SCALE_MODES = ("fit", "shrink", "actual", "custom", "paper")
 ORIENTATIONS = ("auto", "portrait", "landscape")
 RANGE_MODES = ("all", "current", "custom", "odd", "even", "recent")
@@ -492,8 +492,10 @@ def paper_size_pt(options: LayoutOptions, first_page_landscape: bool = False) ->
     return width_pt, height_pt
 
 
-def nup_grid(nup: int) -> Tuple[int, int]:
-    """每张多页的网格（列, 行）。"""
+def nup_grid(nup: int, landscape: bool = True) -> Tuple[int, int]:
+    """每张多页的网格（列, 行）；八合一随纸张方向转置。"""
+    if int(nup) == 8:
+        return (4, 2) if landscape else (2, 4)
     return {
         1: (1, 1), 2: (2, 1), 4: (2, 2), 6: (3, 2), 9: (3, 3), 16: (4, 4),
     }.get(int(nup), (1, 1))
@@ -511,7 +513,7 @@ def slot_rects(
     槽位间距 gap 用于 N-up 分隔；四周使用用户设置的页边距。
     排列顺序：row = 从左到右、从上到下；column = 从上到下、从左到右。
     """
-    cols, rows = nup_grid(nup)
+    cols, rows = nup_grid(nup, landscape=paper_w >= paper_h)
     left, top, right, bottom = options.effective_margins_pt()
     gap = mm_to_pt(gap_mm)
     usable_w = max(1.0, paper_w - left - right - gap * (cols - 1))
@@ -640,6 +642,8 @@ def preview_metrics(
     slot = slots[0] if slots else fitz.Rect(left, top, paper_w - right, paper_h - bottom)
 
     src = fitz.Rect(0, 0, max(1.0, page_w), max(1.0, page_h))
+    if options.auto_rotate and (src.width > src.height) != (slot.width > slot.height):
+        src = fitz.Rect(0, 0, src.height, src.width)
     desired = compute_desired_rect(src, slot, options.scale_mode, options.scale_percent)
     percent = 0.0
     if src.width > 0:
@@ -687,6 +691,8 @@ def side_scale_percents(
             result.append((0.0, False))
             continue
         src = fitz.Rect(0, 0, max(1.0, width), max(1.0, height))
+        if options.auto_rotate and (src.width > src.height) != (slot.width > slot.height):
+            src = fitz.Rect(0, 0, src.height, src.width)
         desired = compute_desired_rect(src, slot, options.scale_mode, options.scale_percent)
         percent = 100.0 * desired.width / src.width if src.width > 0 else 0.0
         overflow = (desired.width > slot.width + 0.01

@@ -69,6 +69,8 @@ from ui_helpers import (
     WINDOW_DEFAULT_SIZE,
     SCALE_LABELS,
     SCALE_LABEL_TO_VALUE,
+    NUP_LABELS,
+    ORIENTATION_LABELS,
     RANGE_LABELS,
     RANGE_LABEL_TO_VALUE,
     PAGE_ORDER_LABELS,
@@ -537,7 +539,7 @@ class SettingsPanelMixin:
         direction_row = ttk.Frame(paper_box)
         direction_row.grid(row=2, column=0, columnspan=4, sticky="w", pady=(6, 0))
         ttk.Label(direction_row, text="方向：").pack(side="left")
-        for value, label in (("auto", "自动"), ("portrait", "纵向"), ("landscape", "横向")):
+        for value, label in ORIENTATION_LABELS.items():
             ttk.Radiobutton(direction_row, text=label, value=value,
                             variable=self.vars["orientation"],
                             command=self._on_setting_change).pack(side="left", padx=(0, 10))
@@ -880,6 +882,8 @@ class SettingsPanelMixin:
         booklet = bool(self.vars["booklet"].get())
         self._set_widget_state(getattr(self, "nup_combo", None),
                                "disabled" if booklet else "readonly")
+        self._set_widget_state(getattr(self, "nup_quick_combo", None),
+                               "disabled" if booklet else "readonly")
         self._set_widget_state(getattr(self, "order_combo", None),
                                "disabled" if booklet else "readonly")
 
@@ -930,6 +934,15 @@ class SettingsPanelMixin:
             label = SCALE_LABELS.get(scale_value, SCALE_LABELS["shrink"])
             if str(self.scale_label_var.get()) != label:
                 self.scale_label_var.set(label)
+        if hasattr(self, "nup_label_var"):
+            label = NUP_LABELS.get(self._int_setting("nup", 1), NUP_LABELS[1])
+            if str(self.nup_label_var.get()) != label:
+                self.nup_label_var.set(label)
+        if hasattr(self, "orientation_label_var"):
+            value = str(self.vars["orientation"].get() or "auto")
+            label = ORIENTATION_LABELS.get(value, ORIENTATION_LABELS["auto"])
+            if str(self.orientation_label_var.get()) != label:
+                self.orientation_label_var.set(label)
         if hasattr(self, "range_label_var"):
             range_value = str(self.vars["range_mode"].get() or "all")
             label = RANGE_LABELS.get(range_value, RANGE_LABELS["all"])
@@ -1373,8 +1386,9 @@ class SettingsPanelMixin:
         paper = str(self.vars["paper_name"].get())
         if paper and paper != defaults.get("paper_name"):
             parts.append(paper)
-        if str(self.vars["orientation"].get()) != "auto":
-            parts.append("横向" if str(self.vars["orientation"].get()) == "landscape" else "纵向")
+        orientation = str(self.vars["orientation"].get())
+        if orientation != "auto":
+            parts.append(ORIENTATION_LABELS.get(orientation, ORIENTATION_LABELS["auto"]))
         if bool(self.vars["annots"].get()):
             parts.append("打印批注")
         if bool(self.vars["skip_blank"].get()):

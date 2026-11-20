@@ -28,6 +28,11 @@ SCALE_LABELS = {
     "paper": "按纸张缩放",
 }
 SCALE_LABEL_TO_VALUE = {label: value for value, label in SCALE_LABELS.items()}
+NUP_LABELS = {1: "单页", 2: "2 合 1", 4: "4 合 1", 6: "6 合 1",
+              8: "8 合 1", 9: "9 合 1", 16: "16 合 1"}
+NUP_LABEL_TO_VALUE = {label: value for value, label in NUP_LABELS.items()}
+ORIENTATION_LABELS = {"auto": "自动", "portrait": "竖版", "landscape": "横版"}
+ORIENTATION_LABEL_TO_VALUE = {label: value for value, label in ORIENTATION_LABELS.items()}
 RANGE_LABELS = {
     "all": "全部页面",
     "current": "当前页",

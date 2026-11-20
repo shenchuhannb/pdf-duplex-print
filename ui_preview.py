@@ -774,8 +774,8 @@ class PreviewMixin:
 
     @staticmethod
     def _format_scale_percent(percent: float) -> str:
-        # 一位小数：混合纸张尺寸时每面比例不同，整数会掩盖逐页计算的事实
-        return f"{percent:.1f}".rstrip("0").rstrip(".")
+        # Acrobat 的比例标签向下取整；内部仍保留逐页计算的完整精度。
+        return str(max(0, int(percent)))
 
     def _update_actual_scale_text(self) -> None:
         """显示当前输出面的实际缩放百分比（逐页计算，翻页时跟随源页尺寸变化）。"""

@@ -622,6 +622,9 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
             self.stop_btn.grid(row=0, column=2, sticky="w", padx=(self._px(GAP), 0))
             info = ttk.Frame(row)
             info.grid(row=0, column=3, sticky="ew", padx=(self._px(16), 0))
+            # info 必须吃掉整行剩余宽度，状态标签宽度才与自身文字长度脱钩；
+            # 否则省略逻辑按当前小宽度截断，文字越缩越短且无法恢复
+            row.columnconfigure(3, weight=1)
             # 状态文字占弹性列；阶段徽标/进度条/页码列固定，长度变化不会推挤它们
             info.columnconfigure(0, weight=1)
             info.columnconfigure(3, minsize=self._px(84))
@@ -630,7 +633,7 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
             self.status_label = tk.Label(info, text="", background=c["surface"],
                                          foreground=c["accent"],
                                          font=_theme.FONT_SUBTITLE, anchor="w")
-            self.status_label.grid(row=0, column=0, sticky="w")
+            self.status_label.grid(row=0, column=0, sticky="ew")
             self.status_label.bind("<Configure>", lambda _e: self._render_status_text())
             self.status_var.trace_add("write", self._on_status_change)
             self._render_status_text()
@@ -660,7 +663,7 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
             self.status_label = tk.Label(info, text="", background=c["surface"],
                                          foreground=c["accent"],
                                          font=_theme.FONT_SUBTITLE, anchor="w")
-            self.status_label.grid(row=0, column=0, sticky="w")
+            self.status_label.grid(row=0, column=0, sticky="ew")
             self.status_label.bind("<Configure>", lambda _e: self._render_status_text())
             self.status_var.trace_add("write", self._on_status_change)
             self._render_status_text()
@@ -755,7 +758,7 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
             self._set_phase_text("③ 正在排版", "accent")
         elif "等待翻面" in text:
             self._set_phase_text("③ 等待翻面", "warning")
-        elif "已完成" in text:
+        elif "已完成" in text or "打印完成" in text:
             self._set_phase_text("③ 已完成", "success")
         elif "已取消" in text:
             self._set_phase_text("③ 已取消", "warning")

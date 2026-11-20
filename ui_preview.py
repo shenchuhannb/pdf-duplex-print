@@ -33,7 +33,8 @@ from word_convert import (
 from pdf_layout import (
     CUSTOM_PAPER_NAME, NUP_CHOICES, PAPER_SIZES_MM, LayoutOptions, build_layout_plan,
     compose_layout_pdf, compute_duplex_orders, compute_merged_duplex_orders,
-    compute_merged_per_copy_orders, compute_single_sided_orders, describe_plan,
+    compute_merged_per_copy_orders, compute_single_sided_orders, content_side_numbers,
+    describe_plan,
     get_pdf_page_count, merge_layout_pdfs, merged_side_ranges, merged_sheet_count,
     plan_batch_summary, preview_metrics, resolve_range_pages,
 )
@@ -407,6 +408,8 @@ class PreviewMixin:
           * 单面打印翻面 0 次。
         """
         usable = []
+        content_total = 0
+        flip_files = 0
         for record in self.files:
             if not record.get("pages"):
                 continue
@@ -418,6 +421,10 @@ class PreviewMixin:
                 continue
             plan = build_layout_plan(len(valid), self._layout_options())
             usable.append(max(1, int(copies)) * plan.output_count)
+            sides = content_side_numbers(plan)
+            content_total += len(sides)
+            if sides != [1]:
+                flip_files += 1
 
         files_count = len(usable)
         pages_count = 0
@@ -438,11 +445,11 @@ class PreviewMixin:
             sheets = sum(usable) // 2
             copies = self._int_setting("copies", 1)
             flips = copies if (copies > 1 and bool(self.vars["copy_exec_on"].get())) else 1
-            if files_count == 0:
-                flips = 0
+            if files_count == 0 or content_total == 1:
+                flips = 0      # 整批仅 1 面内容时按单面输出，无需翻面
         else:
             sheets = sum(usable) // 2
-            flips = files_count
+            flips = flip_files  # 单页文件不翻面，只统计真正需要翻面的文件
 
         self.metric_vars["files"].set(str(files_count))
         self.metric_vars["pages"].set(str(pages_count))
@@ -458,6 +465,7 @@ class PreviewMixin:
         """
         counts: List[int] = []
         names: List[str] = []
+        content_total = 0
         single_sided = not bool(self.vars["manual_duplex"].get())
         for record in self.files:
             if not record.get("pages"):
@@ -470,6 +478,7 @@ class PreviewMixin:
                 continue
             plan = build_layout_plan(len(valid), self._layout_options())
             counts.append(plan.output_count)
+            content_total += len(content_side_numbers(plan))
             names.append(os.path.basename(record["path"]))
 
         if not counts:
@@ -479,6 +488,12 @@ class PreviewMixin:
             self.batch_plan_var.set(
                 "单面打印：不进行翻面。\n"
                 f"合并后共 {sum(counts)} 个输出面；勾选“手动双面”后显示整批两阶段页序。")
+            return
+        if content_total == 1:
+            copies = self._int_setting("copies", 1)
+            self.batch_plan_var.set(
+                "仅 1 页内容：按单面打印，无需翻面（预计翻面 0 次）。\n"
+                f"打印页序：第 1 面 × {copies} 份。")
             return
         try:
             flow = str(self.vars["print_flow"].get() or "batch_all")
@@ -536,9 +551,14 @@ class PreviewMixin:
                          fg=self.colors["muted"],
                          background=self.colors["surface"]).pack(side="left", padx=4)
             if phase == 1 and plan.manual_duplex:
+                if content_side_numbers(plan) == [1]:
+                    hint, hint_color = "仅 1 页内容，按单面打印，无需翻面。", self.colors["success"]
+                else:
+                    hint = "↓ 第一面打印完成后，将整叠纸【整体翻面】放回进纸盘 ↓"
+                    hint_color = self.colors["warning"]
                 tk.Label(self.preview_box_frame,
-                         text="↓ 第一面打印完成后，将整叠纸【整体翻面】放回进纸盘 ↓",
-                         font=("Microsoft YaHei UI", 8), fg=self.colors["warning"],
+                         text=hint,
+                         font=("Microsoft YaHei UI", 8), fg=hint_color,
                          background=self.colors["surface"]).pack(anchor="w", pady=(2, 2))
 
     def _side_box(self, parent: tk.Frame, plan, side_no: int,

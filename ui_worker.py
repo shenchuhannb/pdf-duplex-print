@@ -138,6 +138,9 @@ class WorkerMixin:
                     self._update_flow_steps()
                 elif kind == "busy":
                     self._set_busy(bool(item[1]))
+                    if not item[1]:
+                        # 打印结束立即刷新一次打印机状态（打印期间暂停驱动探测）
+                        self._poll_printer_status(reschedule=False, force=True)
                 elif kind == "call":
                     try:
                         item[1]()
@@ -600,12 +603,14 @@ class WorkerMixin:
                     self._remove_temp_file(item["path"])
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
-            statuses = [("已取消" if cancelled else ("已完成" if completed else "失败"), item["job"]["iid"])
+            # 与 _poll_ui_queue 的 rows 处理器约定一致：(iid, 状态文本)
+            statuses = [(item["job"]["iid"],
+                         "已取消" if cancelled else ("已完成" if completed else "失败"))
                         for item in prepared]
             self._post(("rows", statuses))
             # 转换产物与打印临时文件一并在完成后删除（异常/取消路径同样执行）
             self._post(("call", self._cleanup_word_temps))
-            self._post(("progress", 0, 1))
+            self._post(("progress", 1, 1) if completed else ("progress", 0, 1))
             self._post(("current", ""))
             if completed:
                 self._post(("status", "整批打印完成"))

@@ -1457,10 +1457,22 @@ class SettingsPanelMixin:
             self.vars["source_name"].set(names[0] if names else "自动选择")
         self._poll_printer_status(reschedule=False)
 
-    def _poll_printer_status(self, reschedule: bool = True) -> None:
+    def _poll_printer_status(self, reschedule: bool = True, force: bool = False) -> None:
         # 退出中：直接返回，不查询驱动、不再重排 after
         if self.shutting_down:
             return
+        if reschedule and self.root.winfo_exists():
+            # 无论是否在打印都保持轮询节拍：旧逻辑打印期间不再重排 after，
+            # 导致打印结束后状态永久停留在“忙碌”，只能手动点刷新。
+            # 先取消旧 id，避免手动刷新与轮询重排产生未跟踪的重复 after
+            if self.printer_poll_id is not None:
+                try:
+                    self.root.after_cancel(self.printer_poll_id)
+                except tk.TclError:
+                    pass
+            self.printer_poll_id = self.root.after(5000, self._poll_printer_status)
+        if not force and self.worker is not None and self.worker.is_alive():
+            return  # 打印期间不探测驱动（host-based 驱动状态查询可能干扰任务）
         printer = self.current_printer()
         if not printer:
             self._set_printer_status("未选择打印机", self.colors["danger"])
@@ -1479,15 +1491,6 @@ class SettingsPanelMixin:
             color = self.colors["success"]
         tag = "（默认打印机）" if status.get("default") else ""
         self._set_printer_status(f"状态：{text}{tag}", color)
-        if reschedule and not self.shutting_down and self.root.winfo_exists() and not (
-                self.worker and self.worker.is_alive()):
-            # 先取消旧 id，避免手动刷新与轮询重排产生未跟踪的重复 after
-            if self.printer_poll_id is not None:
-                try:
-                    self.root.after_cancel(self.printer_poll_id)
-                except tk.TclError:
-                    pass
-            self.printer_poll_id = self.root.after(5000, self._poll_printer_status)
 
     def _set_printer_status(self, text: str, color: str = "") -> None:
         self.printer_status_var.set(text)

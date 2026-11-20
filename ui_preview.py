@@ -36,7 +36,7 @@ from pdf_layout import (
     compute_merged_per_copy_orders, compute_single_sided_orders, content_side_numbers,
     describe_plan,
     get_pdf_page_count, merge_layout_pdfs, merged_side_ranges, merged_sheet_count,
-    plan_batch_summary, preview_metrics, resolve_range_pages,
+    plan_batch_summary, preview_metrics, resolve_range_pages, side_scale_percents,
 )
 from printer_core import (
     GdiPrinter, PrinterOptions, cancel_job, check_printer_ready, get_default_printer,
@@ -595,6 +595,7 @@ class PreviewMixin:
         self.preview_pages = 0
         self.preview_page_index = 0
         self.preview_metrics_data = {}
+        self.preview_side_scales = []
         self._paper_photo_cache.clear()
         for widget in self.thumb_frame.winfo_children():
             widget.destroy()
@@ -677,13 +678,23 @@ class PreviewMixin:
             out_path = os.path.join(temp_dir, "preview.pdf")
             result = compose_layout_pdf(src_path, abs_pages, out_path, layout)
 
-            # 取第一张源页的显示尺寸（已考虑 /Rotate），用于计算缩放百分比
+            # 缩放逐页按源页尺寸计算：首页用于摘要，side_scales 供翻页时逐面显示
+            # （rel -> 绝对页号必须走 result.abs_pages，忽略空白页过滤后原索引会错位）
             src_w, src_h = 595.0, 842.0
+            side_scales: List[Tuple[float, bool]] = []
             try:
                 src_doc = fitz.open(src_path)
-                src_page = src_doc[abs_pages[0] - 1]
-                src_w, src_h = src_page.rect.width, src_page.rect.height
-                src_doc.close()
+                try:
+                    first_page = src_doc[result.abs_pages[0] - 1]
+                    src_w, src_h = first_page.rect.width, first_page.rect.height
+
+                    def _size_for_rel(rel: int) -> Tuple[float, float]:
+                        rect = src_doc[result.abs_pages[rel - 1] - 1].rect
+                        return rect.width, rect.height
+
+                    side_scales = side_scale_percents(result.plan, layout, _size_for_rel)
+                finally:
+                    src_doc.close()
             except Exception:
                 pass
             metrics = preview_metrics(result.plan, layout, src_w, src_h)
@@ -708,6 +719,7 @@ class PreviewMixin:
             self.ui_queue.put(("preview", generation, {
                 "temp_dir": temp_dir, "pages": total, "pngs": pngs, "thumbs": thumbs,
                 "info": describe_plan(result.plan), "metrics": metrics,
+                "side_scales": side_scales,
                 "paper_pts": paper_pts,
             }))
         except ToolError as exc:
@@ -726,6 +738,7 @@ class PreviewMixin:
         self.preview_pngs = {i: data for i, data in enumerate(payload["pngs"])}
         self.preview_info_var.set(str(payload.get("info", "")))
         self.preview_metrics_data = dict(payload.get("metrics") or {})
+        self.preview_side_scales = list(payload.get("side_scales") or [])
         self._draw_advanced_preview()
         self.preview_paper_pts = list(payload.get("paper_pts") or [])
         self._paper_photo_cache.clear()
@@ -752,19 +765,37 @@ class PreviewMixin:
         self._update_actual_scale_text()
         self._show_preview_page(self.preview_page_index)
 
+    def _scale_percent_for(self, index: int) -> float:
+        """指定输出面的实际缩放百分比；无逐面数据时回退首页摘要值。"""
+        scales = getattr(self, "preview_side_scales", None) or []
+        if 0 <= index < len(scales) and scales[index][0] > 0:
+            return float(scales[index][0])
+        return float((self.preview_metrics_data or {}).get("scale_percent") or 0.0)
+
+    @staticmethod
+    def _format_scale_percent(percent: float) -> str:
+        # 一位小数：混合纸张尺寸时每面比例不同，整数会掩盖逐页计算的事实
+        return f"{percent:.1f}".rstrip("0").rstrip(".")
+
     def _update_actual_scale_text(self) -> None:
-        """显示当前缩放模式下的实际百分比（例如“实际 87%”）。"""
+        """显示当前输出面的实际缩放百分比（逐页计算，翻页时跟随源页尺寸变化）。"""
         metrics = self.preview_metrics_data or {}
-        percent = float(metrics.get("scale_percent") or 0.0)
+        index = getattr(self, "preview_page_index", 0)
+        percent = self._scale_percent_for(index)
+        overflow = bool(metrics.get("overflow"))
+        scales = getattr(self, "preview_side_scales", None) or []
+        if 0 <= index < len(scales) and scales[index][0] > 0:
+            overflow = scales[index][1]
         if percent <= 0:
             self.actual_scale_var.set("实际 —")
             return
-        text = f"实际 {percent:.0f}%"
-        if metrics.get("overflow"):
+        number = self._format_scale_percent(percent)
+        text = f"实际 {number}%"
+        if overflow:
             text += "（超出，已裁切）"
         self.actual_scale_var.set(text)
         if hasattr(self, "preview_status_scale_var"):
-            self.preview_status_scale_var.set(f"缩放 {percent:.0f}%")
+            self.preview_status_scale_var.set(f"缩放 {number}%")
 
     def _set_preview_page(self, delta: int) -> None:
         if self.preview_pages <= 0:
@@ -783,6 +814,7 @@ class PreviewMixin:
         if hasattr(self, "preview_page_entry_var"):
             self.preview_page_entry_var.set(str(self.preview_page_index + 1))
         self._sync_widget_states()
+        self._update_actual_scale_text()
         self._draw_paper_preview()
 
     def _get_paper_photo(self, index: int, width: int, height: int):
@@ -903,8 +935,9 @@ class PreviewMixin:
         if len(indexes) > 1:
             page_text += f"–{indexes[-1] + 1} 面"
         page_text += f" / 共 {self.preview_pages} 面"
-        percent = float(metrics.get("scale_percent") or 0.0)
-        scale_text = f"缩放 {percent:.0f}%" if percent > 0 else "缩放 —"
+        percent = self._scale_percent_for(indexes[0])
+        scale_text = (f"缩放 {self._format_scale_percent(percent)}%"
+                      if percent > 0 else "缩放 —")
         paper_w, paper_h = self._paper_size_for(indexes[0])
         paper_text = f"纸张 {paper_w / 72 * 25.4:.0f}×{paper_h / 72 * 25.4:.0f} mm"
         nup = int(metrics.get("nup") or 1)

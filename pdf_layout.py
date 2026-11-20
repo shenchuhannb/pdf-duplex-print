@@ -658,6 +658,43 @@ def preview_metrics(
     }
 
 
+def side_scale_percents(
+    plan: "LayoutPlan",
+    options: LayoutOptions,
+    size_for_rel,
+) -> List[Tuple[float, bool]]:
+    """每个输出面的（实际缩放百分比, 是否溢出裁切），按该面首个内容页尺寸计算。
+
+    缩放是逐页按源页尺寸计算的（与 Acrobat“适合”一致），不是整批固定值：
+    混合 A4/Letter/小页面时每个输出面的比例都不同，预览翻页应跟着变。
+    size_for_rel(rel) 返回该相对页号源页的 (宽, 高)，单位点。
+    槽位间距与 compose_layout_pdf 保持一致（N-up 2mm，小册子 0）。
+    """
+    nup = 2 if plan.booklet else max(1, int(plan.nup))
+    gap = 0.0 if plan.booklet else 2.0
+    slots = slot_rects(plan.paper_pt[0], plan.paper_pt[1], nup, options, gap_mm=gap)
+    slot = slots[0]
+    result: List[Tuple[float, bool]] = []
+    for entries in plan.sides:
+        rel = next((r for r in entries
+                    if r is not None and 1 <= r <= plan.total_selected), None)
+        if rel is None:
+            result.append((0.0, False))
+            continue
+        try:
+            width, height = size_for_rel(rel)
+        except Exception:
+            result.append((0.0, False))
+            continue
+        src = fitz.Rect(0, 0, max(1.0, width), max(1.0, height))
+        desired = compute_desired_rect(src, slot, options.scale_mode, options.scale_percent)
+        percent = 100.0 * desired.width / src.width if src.width > 0 else 0.0
+        overflow = (desired.width > slot.width + 0.01
+                    or desired.height > slot.height + 0.01)
+        result.append((percent, overflow))
+    return result
+
+
 # ----------------------------------------------------------------------------
 # 版式计划（N-up / 小册子 / 双面补页）
 # ----------------------------------------------------------------------------

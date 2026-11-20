@@ -12,8 +12,38 @@ from pdf_layout import (
     compute_print_orders, compute_single_sided_orders, content_side_numbers,
     merged_side_ranges,
     merged_sheet_count, nup_grid, paper_size_pt, plan_batch_summary,
-    plan_booklet_sides, plan_nup_sides, resolve_range_pages,
+    plan_booklet_sides, plan_nup_sides, resolve_range_pages, side_scale_percents,
 )
+
+
+class TestSideScalePercents:
+    """缩放必须逐页按源页尺寸计算（对齐 Acrobat“适合”），不是整批固定值。"""
+
+    OPTIONS = LayoutOptions(printable_insets_pt=(11.28, 11.28, 15.72, 11.76))
+
+    def test_percent_follows_each_source_page(self):
+        plan = build_layout_plan(2, self.OPTIONS)
+        sizes = {1: (595.28, 841.89), 2: (300.0, 400.0)}   # A4 + 小页面
+        scales = side_scale_percents(plan, self.OPTIONS, lambda rel: sizes[rel])
+        assert len(scales) == 2
+        big, small = scales[0][0], scales[1][0]
+        assert abs(big - 95.47) < 0.2        # A4 -> P1007 可打印区约 95.5%
+        assert small > big + 30              # 小页面放大到槽位，比例明显不同
+
+    def test_blank_side_has_no_percent(self):
+        plan = build_layout_plan(1, self.OPTIONS)          # 双面补 1 空白面
+        scales = side_scale_percents(
+            plan, self.OPTIONS, lambda rel: (595.28, 841.89))
+        assert scales[0][0] > 0
+        assert scales[1] == (0.0, False)
+
+    def test_actual_size_is_hundred_percent(self):
+        options = LayoutOptions(scale_mode="actual",
+                                printable_insets_pt=(11.28, 11.28, 15.72, 11.76))
+        plan = build_layout_plan(1, options)
+        scales = side_scale_percents(plan, options, lambda rel: (595.28, 841.89))
+        assert abs(scales[0][0] - 100.0) < 0.01
+        assert scales[0][1] is True            # 超出可打印区，标记溢出裁切
 
 
 # ------------------------------------------------------------------ 双面页序

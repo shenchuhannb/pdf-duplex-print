@@ -51,6 +51,7 @@ from window_geometry import (
     choose_geometry, format_geometry, list_work_areas,
 )
 import theme as _theme
+import win32_flicker
 from app_identity import apply_window_icon
 
 
@@ -1214,6 +1215,7 @@ class SettingsPanelMixin:
         if visible:
             win.deiconify()
             win.lift()
+            win32_flicker.install_erase_background(win, self.colors["bg"])
 
     def _place_toplevel_over_root(self, win, width: int, height: int) -> None:
         """在显示前一次性算好 Toplevel 的尺寸与位置（相对主窗居中且不越界）。

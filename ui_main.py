@@ -63,6 +63,7 @@ from window_geometry import (
     choose_geometry, format_geometry, list_work_areas,
 )
 import theme as _theme
+import win32_flicker
 from app_identity import apply_window_icon
 
 
@@ -213,6 +214,8 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         self._apply_window_geometry()
         self._bind_shortcuts()
         self._setup_drag_drop()
+        # 后台切回前台的黑块修复需真实 HWND，等根窗口首次 Map 后安装
+        self.root.bind("<Map>", self._on_root_map_erase_fix, add="+")
         self._refresh_printers()
         self._populate_recent_menu()
         self._sync_widgets()
@@ -220,6 +223,10 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         self.ui_poll_id = self.root.after(100, self._poll_ui_queue)
         if self.preview_enabled:
             self.printer_poll_id = self.root.after(1500, self._poll_printer_status)
+
+    def _on_root_map_erase_fix(self, event) -> None:
+        if event.widget is self.root:
+            win32_flicker.install_erase_background(self.root, self.colors["bg"])
 
     # ------------------------------------------------------------------ 变量
     def _init_vars(self) -> None:

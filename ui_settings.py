@@ -126,40 +126,34 @@ class SettingsPanelMixin:
             frame.grid_columnconfigure(column, minsize=request + gap)
 
     def _build_settings_strip(self, box: ttk.Frame) -> None:
-        """默认设置条：显式多段栅格，禁止 pack 挤压。
-
-        4 段布局（1024×720 @150% 仍不重叠、不裁字）：
-          1. 打印机 / 份数 / 输出方式
-          2. 打印流程三段单选 + 高级设置（窄窗口自动拆成两行）
-          3. 页面范围 / 按份执行 / 范围错误 / 流程说明
-        每列用 grid_columnconfigure(minsize=实测请求宽度+8px)，不依赖估算。
-        """
+        """三行常用设置：设备与输出、页面范围、翻面流程，低频操作靠右。"""
         self._init_setting_widgets()
         self.settings_box = box
-        box.columnconfigure(0, weight=0)
-        box.columnconfigure(1, weight=1)
+        box.columnconfigure(0, weight=1)
 
-        line1 = ttk.Frame(box)
-        line1.grid(row=0, column=0, columnspan=2, sticky="ew")
-        printer = self._make_printer_widgets(line1, compact=True)
+        primary = ttk.Frame(box)
+        primary.grid(row=0, column=0, sticky="w")
+        self.settings_primary_row = primary
+        printer = self._make_printer_widgets(primary, compact=True)
         self.printer_combo = printer["combo"]
         self.refresh_btn = printer["refresh"]
-        ttk.Label(line1, text="打印机", width=5, anchor="e").grid(row=0, column=0, sticky="e")
+        ttk.Label(primary, text="打印机", style="Muted.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, self._px(GAP_S)))
         self.printer_combo.grid(row=0, column=1, sticky="w")
-        self.refresh_btn.grid(row=0, column=2)
+        self.refresh_btn.grid(row=0, column=2, padx=(self._px(GAP_S), self._px(GAP)))
 
-        ttk.Label(line1, text="份数", width=3, anchor="e").grid(row=0, column=3, sticky="e")
-        # width=5：至少完整显示 4 位数字（99 份 + 右侧箭头留白）；
-        # 专用 Copies.TSpinbox 加大内边距，避免数字贴住/被上下箭头压住。
-        self.copies_spin = ttk.Spinbox(line1, from_=1, to=99, width=5,
+        ttk.Label(primary, text="份数", style="Muted.TLabel").grid(
+            row=0, column=3, sticky="w", padx=(0, self._px(GAP_S)))
+        self.copies_spin = ttk.Spinbox(primary, from_=1, to=99, width=5,
                                        style="Copies.TSpinbox",
                                        textvariable=self.vars["copies"],
                                        command=self._on_setting_change)
-        self.copies_spin.grid(row=0, column=4)
+        self.copies_spin.grid(row=0, column=4, padx=(0, self._px(GAP)))
         self.copies_spin.bind("<KeyRelease>", lambda _e: self._on_setting_change())
 
-        ttk.Label(line1, text="输出方式", width=8, anchor="e").grid(row=0, column=5, sticky="e")
-        out = ttk.Frame(line1)
+        ttk.Label(primary, text="输出", style="Muted.TLabel").grid(
+            row=0, column=5, sticky="w", padx=(0, self._px(GAP_S)))
+        out = ttk.Frame(primary)
         out.grid(row=0, column=6, sticky="w")
         self.single_radio = ttk.Radiobutton(
             out, text="单面", value="single", variable=self.duplex_mode_var,
@@ -168,119 +162,97 @@ class SettingsPanelMixin:
         self.manual_duplex_check = ttk.Radiobutton(
             out, text="手动双面", value="duplex", variable=self.duplex_mode_var,
             command=self._on_duplex_mode_change)
-        self.manual_duplex_check.grid(row=0, column=1, sticky="w", padx=(self._px(GAP), 0))
-        self._apply_grid_minwidths(line1, range(7))
+        self.manual_duplex_check.grid(row=0, column=1, sticky="w", padx=(self._px(GAP_S), 0))
 
-        # 第二行：打印流程三选一（替代旧的“批次翻面 + 每文件暂停”组合）
-        flow_row = ttk.Frame(box)
-        flow_row.grid(row=1, column=0, sticky="w", pady=(self._px(1), 0))
-        self.settings_flow_row = flow_row
-        ttk.Label(flow_row, text="打印流程", width=8, anchor="e").grid(
-            row=0, column=0, sticky="e")
-        self.flow_batch_all_radio = ttk.Radiobutton(
-            flow_row, text="整批翻面 · 打完全部再取纸",
-            value="batch_all", variable=self.vars["print_flow"],
-            command=self._on_setting_change)
-        self.flow_batch_all_radio.grid(row=0, column=1, sticky="w")
-        self.flow_batch_take_radio = ttk.Radiobutton(
-            flow_row, text="整批翻面 · 逐文件取纸",
-            value="batch_take", variable=self.vars["print_flow"],
-            command=self._on_setting_change)
-        self.flow_batch_take_radio.grid(row=0, column=2, sticky="w")
-        self.flow_per_file_radio = ttk.Radiobutton(
-            flow_row, text="逐文件翻面 · 逐文件取纸",
-            value="per_file", variable=self.vars["print_flow"],
-            command=self._on_setting_change)
-        self.flow_per_file_radio.grid(row=0, column=3, sticky="w")
-        self._apply_grid_minwidths(flow_row, range(4))
+        advanced = ttk.Frame(box)
+        advanced.grid(row=0, column=1, sticky="e", padx=(self._px(GAP), 0))
+        self.settings_advanced_row = advanced
+        self.advanced_summary_label = ttk.Label(
+            advanced, textvariable=self.advanced_summary_var, style="Muted.TLabel", anchor="e")
+        self.advanced_summary_label.grid(row=0, column=0, sticky="e",
+                                         padx=(0, self._px(GAP)))
+        self.advanced_btn = ttk.Button(advanced, text="高级设置…",
+                                       command=self.open_advanced_settings)
+        self.advanced_btn.grid(row=0, column=1, sticky="e")
+        self.restore_btn = ttk.Button(advanced, text="恢复默认", style="Ghost.TButton",
+                                      command=self.restore_defaults)
+        self.restore_btn.grid(row=0, column=2, sticky="e")
 
-        # 第三行：页面范围 + 按份执行 + 范围/流程提示（错误列弹性但不压别人）
-        line3 = ttk.Frame(box)
-        line3.grid(row=2, column=0, sticky="ew", pady=(self._px(1), 0))
-        ttk.Label(line3, text="页面范围", width=8, anchor="e").grid(
-            row=0, column=0, sticky="e")
+        range_row = ttk.Frame(box)
+        range_row.grid(row=1, column=0, columnspan=2, sticky="ew",
+                       pady=(self._px(GAP_S), 0))
+        ttk.Label(range_row, text="页面范围", style="Muted.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, self._px(GAP_S)))
         self.range_mode_combo = ttk.Combobox(
-            line3, textvariable=self.range_label_var, state="readonly", width=8,
+            range_row, textvariable=self.range_label_var, state="readonly", width=8,
             values=tuple(RANGE_LABELS.values()))
         self.range_mode_combo.grid(row=0, column=1, sticky="w")
         self.range_mode_combo.bind("<<ComboboxSelected>>", self._on_range_mode_selected)
-        self.range_entry = ttk.Entry(line3, textvariable=self.vars["range_text"], width=9)
-        self.range_entry.grid(row=0, column=2, sticky="w")
+        self.range_entry = ttk.Entry(range_row, textvariable=self.vars["range_text"], width=11)
+        self.range_entry.grid(row=0, column=2, sticky="w", padx=(self._px(GAP_S), 0))
         self.range_entry.bind("<KeyRelease>", lambda _e: self._on_setting_change())
         self.copy_exec_check = ttk.Checkbutton(
-            line3, text="按份执行", variable=self.vars["copy_exec_on"],
+            range_row, text="按份执行", variable=self.vars["copy_exec_on"],
             command=self._on_setting_change)
-        self.copy_exec_check.grid(row=0, column=3, sticky="w")
-        self.range_error_label = ttk.Label(line3, textvariable=self.range_error_var,
-                                           foreground=self.colors["danger"], anchor="w")
-        self.range_error_label.grid(row=0, column=4, sticky="ew", padx=(self._px(GAP), 0))
-        # 流程说明与范围错误同一行（都在右侧信息区），不再单独占一行：
-        # 720 高度下多一行会把文件列表压到 5 行以下。
-        note_text = "份数>1 需按份执行才可按文件取纸"
-        self.flow_note_label = ttk.Label(line3, text=note_text, style="Muted.TLabel",
-                                         anchor="w")
-        self.flow_note_label.grid(row=0, column=5, sticky="w", padx=(self._px(GAP), 0))
-        # 先用完整文案量出列宽，再切回空变量；列最小宽度会保留说明文字的空间。
-        self._apply_grid_minwidths(line3, (0, 1, 2, 3, 5))
-        self.flow_note_label.configure(textvariable=self.flow_note_var,
-                                       text="")
-        line3.columnconfigure(4, weight=1)
+        self.copy_exec_check.grid(row=0, column=3, sticky="w", padx=(self._px(GAP), 0))
+        self.range_error_label = ttk.Label(range_row, textvariable=self.range_error_var,
+                                           style="Danger.TLabel", anchor="w")
+        self.range_error_label.grid(row=0, column=4, sticky="ew",
+                                    padx=(self._px(GAP), 0))
+        self.flow_note_label = ttk.Label(range_row, textvariable=self.flow_note_var,
+                                         style="Muted.TLabel", anchor="w")
+        self.flow_note_label.grid(row=0, column=5, sticky="w")
+        range_row.columnconfigure(4, weight=1)
 
-        # 第四段：高级设置摘要与操作按钮。默认与打印流程同行右对齐；
-        # 窗口较窄（如 125%/150% 下的 1024）自动落到独立一行，
-        # 避免挤占流程单选的宽度，也避免在 720 高度下白白多占一行。
-        line4 = ttk.Frame(box)
-        line4.grid(row=1, column=1, sticky="e", padx=(self._px(GAP), 0),
-                   pady=(self._px(1), 0))
-        self.settings_advanced_row = line4
-        line4.columnconfigure(0, weight=1)
-        self.advanced_summary_label = ttk.Label(
-            line4, textvariable=self.advanced_summary_var, style="Muted.TLabel",
-            anchor="e")
-        self.advanced_summary_label.grid(row=0, column=1, sticky="e")
-        self.advanced_btn = ttk.Button(line4, text="高级设置…", command=self.open_advanced_settings)
-        self.advanced_btn.grid(row=0, column=2, sticky="e")
-        self.restore_btn = ttk.Button(
-            line4, text="恢复默认", style="Ghost.TButton", command=self.restore_defaults)
-        self.restore_btn.grid(row=0, column=3, sticky="e")
-        self._apply_grid_minwidths(line4, (1, 2, 3))
+        flow_row = ttk.Frame(box)
+        flow_row.grid(row=2, column=0, columnspan=2, sticky="w",
+                      pady=(self._px(GAP_S), 0))
+        self.settings_flow_row = flow_row
+        ttk.Label(flow_row, text="翻面流程", style="Muted.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, self._px(GAP_S)))
+        self.flow_batch_all_radio = ttk.Radiobutton(
+            flow_row, text="整批，最后取纸", value="batch_all",
+            variable=self.vars["print_flow"], command=self._on_setting_change)
+        self.flow_batch_all_radio.grid(row=0, column=1, sticky="w")
+        self.flow_batch_take_radio = ttk.Radiobutton(
+            flow_row, text="整批，逐文件取纸", value="batch_take",
+            variable=self.vars["print_flow"], command=self._on_setting_change)
+        self.flow_batch_take_radio.grid(row=0, column=2, sticky="w",
+                                        padx=(self._px(GAP), 0))
+        self.flow_per_file_radio = ttk.Radiobutton(
+            flow_row, text="逐文件执行", value="per_file",
+            variable=self.vars["print_flow"], command=self._on_setting_change)
+        self.flow_per_file_radio.grid(row=0, column=3, sticky="w")
 
-        # 流程说明列固定在范围行右侧；这里只切换文案，不增删行高。
         box.bind("<Configure>", self._reflow_settings_strip, add="+")
         self._strip_layout_key = None
-        # 构建期间 reqwidth 可能尚未稳定：等布局空闲后再判断一次同行/拆行。
         box.after_idle(self._reflow_settings_strip)
-        # “恢复 Acrobat 等效默认（单面）”放在高级设置底部：它是低频的基线重置，
-        # 且 Acrobat 基线本身是单面输出，放在设置条里容易被误读成本工具默认。
-        # 首次启动与“恢复默认”的默认输出方式始终是手动双面。
 
     def _reflow_settings_strip(self, event=None) -> None:
-        """按实际可用宽度决定“流程 + 高级设置”同行还是拆行。"""
+        """空间不足时把高级设置操作移到独立行，避免压缩输入控件。"""
         box = getattr(self, "settings_box", None)
+        primary = getattr(self, "settings_primary_row", None)
         flow_row = getattr(self, "settings_flow_row", None)
-        line4 = getattr(self, "settings_advanced_row", None)
-        if box is None or flow_row is None or line4 is None:
+        advanced = getattr(self, "settings_advanced_row", None)
+        if box is None or primary is None or flow_row is None or advanced is None:
             return
         width = int(event.width) if event is not None else box.winfo_width()
         if width <= 1:
             return
-        gap = self._px(GAP * 2)
-        # 请求宽度会随字体/文案变化（首次构建时可能还是小值），因此缓存键只记录
-        # “是否同行”，不记录宽度——否则同一宽度下 reqwidth 变大后不会重新判断，
-        # 右侧摘要会被挤压截断（125%/150% 的 1024 窗口就踩过这个坑）。
-        required = flow_row.winfo_reqwidth() + line4.winfo_reqwidth() + gap
-        side_by_side = required + self._px(8) <= width
+        required = max(primary.winfo_reqwidth(), flow_row.winfo_reqwidth()) \
+            + advanced.winfo_reqwidth() + self._px(GAP * 2)
+        side_by_side = required + self._px(GAP) <= width
         if side_by_side == self._strip_layout_key:
             return
         self._strip_layout_key = side_by_side
         if side_by_side:
-            flow_row.grid_configure(row=1, column=0, columnspan=1, sticky="w")
-            line4.grid_configure(row=1, column=1, columnspan=1, sticky="e",
-                                 padx=(self._px(GAP), 0))
+            primary.grid_configure(row=0, column=0, columnspan=1, sticky="w")
+            advanced.grid_configure(row=0, column=1, columnspan=1, sticky="e",
+                                    padx=(self._px(GAP), 0), pady=0)
         else:
-            flow_row.grid_configure(row=1, column=0, columnspan=2, sticky="w")
-            line4.grid_configure(row=3, column=0, columnspan=2, sticky="ew",
-                                 padx=0)
+            primary.grid_configure(row=0, column=0, columnspan=2, sticky="w")
+            advanced.grid_configure(row=3, column=0, columnspan=2, sticky="e",
+                                    padx=0, pady=(self._px(GAP_S), 0))
 
     def _build_settings_form(self, box: ttk.Frame) -> None:
         """方案 1：右侧竖排表单，标签统一 8 字符宽并右对齐。"""
@@ -288,7 +260,7 @@ class SettingsPanelMixin:
         box.columnconfigure(1, weight=1)
 
         def label(row: int, text: str) -> None:
-            ttk.Label(box, text=text, width=8, anchor="e").grid(
+            ttk.Label(box, text=text, width=8, anchor="e", style="Muted.TLabel").grid(
                 row=row, column=0, sticky="e", padx=(0, self._px(GAP)), pady=(0, self._px(GAP)))
 
         label(0, "打印机")
@@ -341,17 +313,17 @@ class SettingsPanelMixin:
         flip = ttk.Frame(box)
         flip.grid(row=5, column=1, sticky="w", pady=(0, self._px(GAP)))
         self.flow_batch_all_radio = ttk.Radiobutton(
-            flip, text="整批翻面 · 打完全部再取纸",
+            flip, text="整批，最后取纸",
             value="batch_all", variable=self.vars["print_flow"],
             command=self._on_setting_change)
         self.flow_batch_all_radio.grid(row=0, column=0, sticky="w")
         self.flow_batch_take_radio = ttk.Radiobutton(
-            flip, text="整批翻面 · 逐文件取纸",
+            flip, text="整批，逐文件取纸",
             value="batch_take", variable=self.vars["print_flow"],
             command=self._on_setting_change)
         self.flow_batch_take_radio.grid(row=1, column=0, sticky="w")
         self.flow_per_file_radio = ttk.Radiobutton(
-            flip, text="逐文件翻面 · 逐文件取纸",
+            flip, text="逐文件执行",
             value="per_file", variable=self.vars["print_flow"],
             command=self._on_setting_change)
         self.flow_per_file_radio.grid(row=2, column=0, sticky="w")
@@ -373,8 +345,8 @@ class SettingsPanelMixin:
         self.restore_acrobat_btn.pack(side="right", padx=(0, 6))
 
         ttk.Label(box, textvariable=self.advanced_summary_var, style="Muted.TLabel",
-                  wraplength=380, justify="left").grid(
-            row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
+                  wraplength=self._px(320), justify="left").grid(
+            row=7, column=0, columnspan=2, sticky="w", pady=(self._px(GAP), 0))
 
     # 兼容旧命名（外部脚本可能调用）
     def _build_quick_settings(self, box: ttk.Frame) -> None:
@@ -441,8 +413,9 @@ class SettingsPanelMixin:
         frame.columnconfigure(1, weight=1, uniform="adv")
 
         # ---- 同源版式预览：直接复用主预览的几何数据（preview_metrics） ----
-        preview_box = ttk.LabelFrame(frame, text=" 版式预览（与主界面同一数据源） ",
-                                     padding=(8, 6))
+        preview_box = ttk.LabelFrame(frame, text=" 版式预览 ",
+                                     style="Card.TLabelframe",
+                                     padding=(self._px(12), self._px(8)))
         preview_box.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         self.adv_preview_canvas = tk.Canvas(
             preview_box, height=self._px(118), background=self.colors["surface_alt"],
@@ -456,7 +429,8 @@ class SettingsPanelMixin:
             "<Configure>", lambda _e: self._draw_advanced_preview())
 
         # ---- 组 1：版式 ----
-        layout_box = ttk.LabelFrame(frame, text=" 版式 ", padding=(8, 6))
+        layout_box = ttk.LabelFrame(frame, text=" 拼版与页面 ", style="Card.TLabelframe",
+                                    padding=(self._px(12), self._px(8)))
         layout_box.grid(row=1, column=0, sticky="nsew", pady=(0, 8), padx=(0, 6))
         ttk.Label(layout_box, text="每张页数：").grid(row=0, column=0, sticky="w")
         self.nup_combo = ttk.Combobox(
@@ -509,7 +483,8 @@ class SettingsPanelMixin:
                                        pady=(8, 0))
 
         # ---- 组 2：纸张 ----
-        paper_box = ttk.LabelFrame(frame, text=" 纸张 ", padding=(8, 6))
+        paper_box = ttk.LabelFrame(frame, text=" 纸张与方向 ", style="Card.TLabelframe",
+                                   padding=(self._px(12), self._px(8)))
         paper_box.grid(row=1, column=1, sticky="nsew", pady=(0, 8), padx=(6, 0))
         paper_box.columnconfigure(3, weight=1)
         ttk.Label(paper_box, text="尺寸：").grid(row=0, column=0, sticky="w")
@@ -555,7 +530,8 @@ class SettingsPanelMixin:
                                        pady=(8, 0))
 
         # ---- 组 3：图像质量 ----
-        quality_box = ttk.LabelFrame(frame, text=" 图像质量 ", padding=(8, 6))
+        quality_box = ttk.LabelFrame(frame, text=" 打印质量 ", style="Card.TLabelframe",
+                                     padding=(self._px(12), self._px(8)))
         quality_box.grid(row=2, column=0, sticky="nsew", pady=(0, 8), padx=(0, 6))
         ttk.Label(quality_box, text="颜色：").grid(row=0, column=0, sticky="w")
         self.color_combo = self._choice_combo(
@@ -581,7 +557,8 @@ class SettingsPanelMixin:
             row=3, column=0, columnspan=4, sticky="w", pady=(8, 0))
 
         # ---- 组 4：输出与清理 ----
-        process_box = ttk.LabelFrame(frame, text=" 输出与清理 ", padding=(8, 6))
+        process_box = ttk.LabelFrame(frame, text=" 输出与清理 ", style="Card.TLabelframe",
+                                     padding=(self._px(12), self._px(8)))
         process_box.grid(row=2, column=1, sticky="nsew", pady=(0, 8), padx=(6, 0))
         process_box.columnconfigure(1, weight=1)
         ttk.Checkbutton(process_box, text="逆序打印",
@@ -628,7 +605,9 @@ class SettingsPanelMixin:
             frame, text="其它（完成判断与页面设置） ▾", style="Ghost.TButton",
             command=self._toggle_advanced_other)
         self.other_toggle_btn.grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 4))
-        self.other_frame = ttk.LabelFrame(frame, text=" 其它 ", padding=(8, 6))
+        self.other_frame = ttk.LabelFrame(frame, text=" 完成判断与页面设置 ",
+                                          style="Card.TLabelframe",
+                                          padding=(self._px(12), self._px(8)))
         self.other_frame.grid(row=4, column=0, columnspan=2, sticky="ew")
         self.other_frame.grid_remove()
         ttk.Label(self.other_frame, text="完成判断：", style="Muted.TLabel").pack(side="left")
@@ -648,8 +627,52 @@ class SettingsPanelMixin:
                   text="页面设置对话框与上方“纸张/边距”同源，用于快速填入常用值。",
                   foreground=self.colors["muted"]).pack(side="left", padx=(10, 0))
 
+        self._advanced_sections = (preview_box, layout_box, paper_box, quality_box, process_box)
+        self.advanced_content_frame = frame
+        self._advanced_layout_key = None
+        frame.bind("<Configure>", self._reflow_advanced_content, add="+")
+        frame.after_idle(self._reflow_advanced_content)
+
+    def _reflow_advanced_content(self, event=None) -> None:
+        """宽度不足时改为单列，避免高 DPI 下表单互相挤压。"""
+        sections = getattr(self, "_advanced_sections", None)
+        frame = getattr(self, "advanced_content_frame", None)
+        if not sections or frame is None:
+            return
+        width = int(event.width) if event is not None else frame.winfo_width()
+        if width <= 1:
+            return
+        other_visible = self.other_frame.winfo_ismapped()
+        stacked = width < self._px(1040)
+        if stacked == self._advanced_layout_key:
+            return
+        self._advanced_layout_key = stacked
+        frame.columnconfigure(0, weight=1, uniform="" if stacked else "adv")
+        frame.columnconfigure(1, weight=0 if stacked else 1,
+                              uniform="" if stacked else "adv")
+        preview, layout, paper, quality, process = sections
+        preview.grid_configure(row=0, column=0, columnspan=1 if stacked else 2,
+                               sticky="ew", padx=0, pady=(0, self._px(GAP)))
+        rows = ((layout, 1), (paper, 2), (quality, 3), (process, 4)) if stacked else (
+            (layout, 1), (paper, 1), (quality, 2), (process, 2))
+        for index, (section, row) in enumerate(rows):
+            column = 0 if stacked or index % 2 == 0 else 1
+            section.grid_configure(
+                row=row, column=column, columnspan=1, sticky="nsew",
+                padx=0 if stacked else ((0, self._px(GAP_S)) if column == 0
+                                       else (self._px(GAP_S), 0)),
+                pady=(0, self._px(GAP)))
+        other_row = 5 if stacked else 3
+        self.other_toggle_btn.grid_configure(
+            row=other_row, column=0, columnspan=1 if stacked else 2,
+            sticky="w", pady=(0, self._px(GAP_S)))
+        self.other_frame.grid_configure(
+            row=other_row + 1, column=0, columnspan=1 if stacked else 2, sticky="ew")
+        if not other_visible:
+            self.other_frame.grid_remove()
+
     def _toggle_advanced_other(self) -> None:
-        if self.other_frame.winfo_manager():
+        if self.other_frame.winfo_ismapped():
             self.other_frame.grid_remove()
             self.other_toggle_btn.configure(text="其它（完成判断与页面设置） ▾")
         else:
@@ -731,8 +754,10 @@ class SettingsPanelMixin:
         percent = float(metrics.get("scale_percent") or 0.0)
         paper_text = f"{paper_w * 25.4 / 72:.0f}×{paper_h * 25.4 / 72:.0f} 毫米"
         self.adv_preview_caption_var.set(
-            f"纸张 {paper_text} · 每张 {expected_nup} 页 · 实际缩放 {percent:.1f}% · "
-            f"本次 {len(abs_pages)} 页 / 输出 {plan.output_count} 面 / {plan.output_count // 2} 张×{copies} 份")
+            f"纸张 {paper_text} · 每张 {expected_nup} 页 · "
+            f"实际缩放 {self._format_scale_percent(percent)}% · "
+            f"本次 {len(abs_pages)} 页 / 输出 {plan.output_count} 面 / "
+            f"{plan.output_count // 2} 张×{copies} 份")
 
     # -------------------------------------------------------------- 设置与联动
     def _on_setting_change(self) -> None:
@@ -822,10 +847,13 @@ class SettingsPanelMixin:
         if per_file:
             # 单行显示：1024 宽下列表卡约 423px，这句约 300px，不换行也不截断
             self.scope_hint_var.set(
-                "未单独设置的文件按上方范围打印，带 ＊ 的是单独设置过的。")
+                "未单独设置的文件按全局范围打印，带 ＊ 的是单独设置过的。")
         else:
             self.scope_hint_var.set(self._mode_hint_text())
-        self.scope_hint_label.grid()
+        if getattr(self, "_file_panel_compact", False):
+            self.scope_hint_label.grid_remove()
+        else:
+            self.scope_hint_label.grid()
 
     def _set_widget_state(self, widget, state: str) -> None:
         """安全设置控件状态：高级设置未打开时控件可能尚未创建。"""
@@ -1171,21 +1199,35 @@ class SettingsPanelMixin:
         # 首帧不闪黑：Toplevel 创建即映射，此时内容还没构建；先 withdraw，
         # 设成与主题一致的底色，构建完内容与滚动区域后再 deiconify。
         win.withdraw()
-        win.title("高级设置 · PDF 双面打印")
+        win.title("高级设置")
         win.transient(self.root)
         win.configure(background=self.colors["bg"])
-        win.minsize(1040, 720)
+        win.minsize(self._px(960), self._px(680))
         win.protocol("WM_DELETE_WINDOW", self._close_advanced_settings)
 
-        footer = ttk.Frame(win, padding=(14, 10))
+        header = ttk.Frame(win, style="Header.TFrame",
+                           padding=(self._px(18), self._px(14)))
+        header.pack(side="top", fill="x")
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, text="高级设置", style="HeaderTitle.TLabel").grid(
+            row=0, column=0, sticky="w")
+        ttk.Label(
+            header, text="调整拼版、纸张、打印质量与输出方式，预览会随设置更新。",
+            style="HeaderMuted.TLabel").grid(row=1, column=0, sticky="w",
+                                             pady=(self._px(GAP_S), 0))
+        ttk.Separator(win, orient="horizontal", style="Line.TSeparator").pack(fill="x")
+
+        footer = ttk.Frame(win, style="Toolbar.TFrame",
+                           padding=(self._px(14), self._px(10)))
         footer.pack(side="bottom", fill="x")
-        ttk.Label(footer, text="改动立即生效，无需“应用”。", style="Muted.TLabel").pack(side="left")
+        ttk.Label(footer, text="更改立即生效，无需应用。", style="ToolbarMuted.TLabel").pack(
+            side="left")
         self.restore_acrobat_btn = ttk.Button(
-            footer, text="恢复 Acrobat 等效默认（单面）", style="Ghost.TButton",
+            footer, text="恢复 Acrobat 默认", style="ToolbarGhost.TButton",
             command=self.restore_acrobat_defaults)
         self.restore_acrobat_btn.pack(side="right")
         ttk.Button(footer, text="关闭", command=self._close_advanced_settings).pack(
-            side="right", padx=(0, 8))
+            side="right", padx=(0, self._px(GAP)))
 
         # 内容区可滚动：小屏/缩放比例较大时也不会裁掉底部选项
         canvas = tk.Canvas(win, background=self.colors["bg"], highlightthickness=0)
@@ -1193,7 +1235,7 @@ class SettingsPanelMixin:
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        body = ttk.Frame(canvas, padding=14, style="Page.TFrame")
+        body = ttk.Frame(canvas, padding=self._px(14), style="Page.TFrame")
         body_id = canvas.create_window((0, 0), window=body, anchor="nw")
 
         # 内容高度变化时刷新 scrollregion（不能只在初始化时设一次）；
@@ -1206,7 +1248,7 @@ class SettingsPanelMixin:
 
         body.bind("<Configure>", _refresh_adv_scrollregion)
         canvas.bind("<Configure>",
-                    lambda e: (canvas.itemconfigure(body_id, width=max(600, e.width)),
+                    lambda e: (canvas.itemconfigure(body_id, width=max(self._px(600), e.width)),
                                _refresh_adv_scrollregion()))
         self._build_advanced_content(body)
         self._sync_widget_states()
@@ -1223,7 +1265,7 @@ class SettingsPanelMixin:
 
         # 内容全部就绪后再决定位置并显示（只定位一次，避免可见后重排）
         win.update_idletasks()
-        self._place_toplevel_over_root(win, 1200, 1000)
+        self._place_toplevel_over_root(win, self._px(1200), self._px(960))
         self.advanced_window = win
         if visible:
             win.deiconify()

@@ -106,7 +106,7 @@ class FilesPanelMixin:
                                          style="Muted.TLabel", anchor="e")
         self.drop_hint_label.grid(row=0, column=2, sticky="e")
 
-        # 范围提示：独立一行（per_file 开启时才显示），口语化说明“按上方范围/＊单设”
+        # 范围提示：独立一行（per_file 开启时才显示），口语化说明“按全局范围/＊单设”
         self.scope_hint_var = tk.StringVar(value="")
         self.scope_hint_label = ttk.Label(
             frame, textvariable=self.scope_hint_var, style="Muted.TLabel",
@@ -130,12 +130,15 @@ class FilesPanelMixin:
         self.add_file_btn.grid(row=0, column=0, sticky="w", padx=(0, self._px(GAP_S)))
         self.add_dir_btn.grid(row=0, column=1, sticky="w", padx=(0, self._px(GAP_S)))
         self.remove_btn.grid(row=0, column=2, sticky="w")
-        self.more_btn = ttk.Menubutton(actions, text="更多 ▾", style="Ghost.TButton")
+        self.more_btn = ttk.Menubutton(actions, text="更多 ▾", style="Ghost.TMenubutton")
         more_menu = tk.Menu(self.more_btn, tearoff=0)
         more_menu.add_command(label="上移", command=lambda: self.move_selected(-1))
         more_menu.add_command(label="下移", command=lambda: self.move_selected(1))
         more_menu.add_command(label="去重", command=self.dedupe_files)
         more_menu.add_command(label="打开目录", command=self.show_in_explorer)
+        self.recent_menu = tk.Menu(more_menu, tearoff=0)
+        more_menu.add_cascade(label="最近使用", menu=self.recent_menu)
+        more_menu.add_command(label="清除最近记录", command=self._clear_recent)
         self.more_btn.configure(menu=more_menu)
         self.more_menu = more_menu
         self.more_btn.grid(row=0, column=4, sticky="w", padx=(0, self._px(GAP_S)))
@@ -156,9 +159,9 @@ class FilesPanelMixin:
         )
         # 基础宽度只是初值；每次刷新/窗口变化后由 _fit_tree_columns() 按内容实测：
         # 文件名列吃剩余宽度，其余列按内容自适应，保证各列宽之和 ≤ 可视宽度。
-        headings = (("name", "文件名", 130, 90, "w"), ("pages", "总页", 40, 36, "center"),
-                    ("scope", "本次范围", 88, 60, "center"),
-                    ("plan", "输出与补页", 94, 72, "center"),
+        headings = (("name", "文件名", 130, 90, "w"), ("pages", "页数", 40, 36, "center"),
+                    ("scope", "打印范围", 88, 60, "center"),
+                    ("plan", "输出 / 补页", 94, 72, "center"),
                     ("status", "状态", 84, 64, "center"))
         for key, text, width, minwidth, anchor in headings:
             # 表头与单元格使用同一对齐基准，避免“标题居中、内容靠左”的错位感
@@ -180,17 +183,37 @@ class FilesPanelMixin:
         self.empty_state.grid(row=0, column=0, sticky="nsew")
         box = tk.Frame(self.empty_state, background=c["surface"])
         box.place(relx=0.5, rely=0.5, anchor="center")
-        tk.Label(box, text="还没有待打印文件",
-                 background=c["surface"], foreground=c["text"],
-                 font=_theme.FONT_SUBTITLE).pack()
-        tk.Label(box,
-                 text="把 PDF / Word / 图片拖到这里，或点上方“＋ 添加文件”",
-                 background=c["surface"], foreground=c["muted"],
-                 font=_theme.FONT_BODY, wraplength=self._px(320),
-                 justify="center").pack(pady=(self._px(4), 0))
-        tk.Label(box, text="Word / WPS / 图片会先自动转换为 PDF 再打印",
-                 background=c["surface"], foreground=c["muted"],
-                 font=_theme.FONT_SMALL).pack(pady=(self._px(2), 0))
+        icon = tk.Canvas(box, width=self._px(58), height=self._px(54),
+                         background=c["surface"], highlightthickness=0, borderwidth=0)
+        icon.pack(pady=(0, self._px(GAP)))
+        s = self.ui_scale
+        icon.create_rectangle(18*s, 3*s, 44*s, 39*s, fill=c["surface_alt"],
+                              outline=c["border_strong"], width=max(1, int(s)))
+        icon.create_rectangle(8*s, 12*s, 36*s, 49*s, fill=c["accent_soft"],
+                              outline=c["accent"], width=max(1, int(s)))
+        icon.create_line(14*s, 23*s, 30*s, 23*s, fill=c["accent"],
+                         width=max(1, int(s)))
+        icon.create_line(14*s, 31*s, 30*s, 31*s, fill=c["accent"],
+                         width=max(1, int(s)))
+        icon.create_oval(37*s, 32*s, 55*s, 50*s, fill=c["accent"], outline=c["accent"])
+        icon.create_line(41*s, 41*s, 51*s, 41*s, fill=c["accent_text"],
+                         width=max(1, int(2*s)))
+        icon.create_line(46*s, 36*s, 46*s, 46*s, fill=c["accent_text"],
+                         width=max(1, int(2*s)))
+        self.empty_icon = icon
+        self.empty_title_label = tk.Label(box, text="添加文件，开始排版",
+                                          background=c["surface"], foreground=c["text"],
+                                          font=_theme.FONT_SUBTITLE)
+        self.empty_title_label.pack()
+        self.empty_hint_label = tk.Label(
+            box, text="拖入 PDF / Word / 图片，或点击“＋ 添加文件”",
+            background=c["surface"], foreground=c["muted"],
+            font=_theme.FONT_BODY, wraplength=self._px(320), justify="center")
+        self.empty_hint_label.pack(pady=(self._px(GAP_S), 0))
+        self.empty_detail_label = tk.Label(
+            box, text="Office 文档与图片会先转换为 PDF，原文件不会被修改",
+            background=c["surface"], foreground=c["muted"], font=_theme.FONT_SMALL)
+        self.empty_detail_label.pack(pady=(self._px(GAP_S), 0))
         self._update_empty_state()
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree.bind("<Double-1>", self._on_tree_double_click)
@@ -212,23 +235,22 @@ class FilesPanelMixin:
         self._build_context_menu()
 
         # 选中操作条：信息一行 + 按钮一行（1024 宽下按钮必须完整可见，不能挤成半截）
-        sel_bar = ttk.Frame(frame)
+        sel_bar = ttk.Frame(frame, style="Toolbar.TFrame",
+                            padding=(self._px(GAP), self._px(GAP_S)))
         sel_bar.grid(row=4, column=0, sticky="ew", pady=(self._px(GAP), 0))
         sel_bar.columnconfigure(0, weight=1)
-        self.sel_info_var = tk.StringVar(value="未选择文件")
+        self.sel_info_var = tk.StringVar(value="选择文件后可单独设置范围与份数")
         self.sel_info_label = ttk.Label(sel_bar, textvariable=self.sel_info_var,
-                                        style="Muted.TLabel", anchor="w")
+                                        style="ToolbarMuted.TLabel", anchor="w")
         self.sel_info_label.grid(row=0, column=0, sticky="ew")
         self.sel_range_btn = ttk.Button(
             sel_bar, text="设置范围…", command=lambda: self.edit_selected_scope("range"))
         self.sel_copies_btn = ttk.Button(
             sel_bar, text="设置份数…", command=lambda: self.edit_selected_scope("copies"))
         self.sel_restore_btn = ttk.Button(
-            sel_bar, text="恢复按上方范围", style="Ghost.TButton",
-            command=self.restore_global_for_selected)
+            sel_bar, text="恢复全局范围", command=self.restore_global_for_selected)
         self.sel_apply_all_btn = ttk.Button(
-            sel_bar, text="应用到全部文件", style="Ghost.TButton",
-            command=self.apply_selected_scope_to_all)
+            sel_bar, text="应用到全部文件", command=self.apply_selected_scope_to_all)
         self.sel_buttons = [self.sel_range_btn, self.sel_copies_btn,
                             self.sel_restore_btn, self.sel_apply_all_btn]
         for index, button in enumerate(self.sel_buttons):
@@ -244,15 +266,50 @@ class FilesPanelMixin:
         recent = ttk.Frame(frame)
         recent.grid(row=5, column=0, sticky="ew", pady=(self._px(GAP), 0))
         recent.columnconfigure(1, weight=1)
+        self.recent_frame = recent
         ttk.Label(recent, text="最近：", style="Muted.TLabel").grid(row=0, column=0, sticky="w")
         self.recent_var = tk.StringVar()
         self.recent_combo = ttk.Combobox(recent, textvariable=self.recent_var, state="readonly",
                                          width=12)
         self.recent_combo.grid(row=0, column=1, sticky="ew", padx=(0, self._px(GAP_S)))
-        ttk.Button(recent, text="添加", command=self._add_recent_file).grid(
-            row=0, column=2, padx=(0, self._px(GAP_S)))
-        ttk.Button(recent, text="清除记录", style="Ghost.TButton",
-                   command=self._clear_recent).grid(row=0, column=3)
+        self.recent_add_btn = ttk.Button(recent, text="添加", command=self._add_recent_file)
+        self.recent_add_btn.grid(row=0, column=2, padx=(0, self._px(GAP_S)))
+        self.recent_clear_btn = ttk.Button(recent, text="清除记录", style="Ghost.TButton",
+                                           command=self._clear_recent)
+        self.recent_clear_btn.grid(row=0, column=3)
+
+    def _sync_file_panel_density(self) -> None:
+        if not hasattr(self, "sel_bar"):
+            return
+        try:
+            compact = self.root.winfo_height() < self._px(820)
+        except tk.TclError:
+            return
+        self._file_panel_compact = compact
+        short_split = compact and self.layout_scheme == "split"
+        if compact:
+            self.scope_hint_label.grid_remove()
+            self.sel_info_label.grid_remove()
+        else:
+            if self.scope_hint_var.get().strip():
+                self.scope_hint_label.grid()
+            self.sel_info_label.grid()
+        if short_split:
+            self.recent_frame.grid_remove()
+            self.empty_icon.pack_forget()
+            self.empty_detail_label.pack_forget()
+        else:
+            self.recent_frame.grid()
+            if not self.empty_icon.winfo_manager():
+                self.empty_icon.pack(before=self.empty_title_label,
+                                     pady=(0, self._px(GAP)))
+            if not self.empty_detail_label.winfo_manager():
+                self.empty_detail_label.pack(pady=(self._px(GAP_S), 0))
+        self.sel_bar.configure(padding=(self._px(GAP),
+                                       self._px(2 if compact else GAP_S)))
+        self.sel_bar.grid_configure(pady=(self._px(GAP_S if compact else GAP), 0))
+        self._sel_layout_key = None
+        self._on_sel_bar_configure()
 
     def _on_sel_bar_configure(self, event=None) -> None:
         """选中操作条宽度变化：单行放不下时改为 2×2，保证按钮文字完整。"""
@@ -263,14 +320,16 @@ class FilesPanelMixin:
         required = sum(button.winfo_reqwidth() for button in self.sel_buttons) \
             + gap * max(0, len(self.sel_buttons) - 1)
         per_row = len(self.sel_buttons) if required <= width else 2
-        key = (per_row, width)
+        compact = bool(getattr(self, "_file_panel_compact", False))
+        key = (per_row, width, compact)
         if getattr(self, "_sel_layout_key", None) == key:
             return
         self._sel_layout_key = key
+        first_row = 0 if compact else 1
         for index, button in enumerate(self.sel_buttons):
-            button.grid_configure(row=1 + index // per_row, column=index % per_row,
+            button.grid_configure(row=first_row + index // per_row, column=index % per_row,
                                   sticky="w", padx=(0, gap),
-                                  pady=(self._px(GAP_S), 0))
+                                  pady=(0 if compact else self._px(GAP_S), 0))
 
     def _on_tree_configure(self, event=None) -> None:
         width = event.width if event is not None else self.tree.winfo_width()
@@ -302,8 +361,8 @@ class FilesPanelMixin:
         columns = list(self.tree["displaycolumns"])
         if not columns or columns == ["#all"]:
             columns = list(self.tree["columns"])
-        headings = {"name": "文件名", "pages": "总页", "scope": "本次范围",
-                    "plan": "输出与补页", "status": "状态"}
+        headings = {"name": "文件名", "pages": "页数", "scope": "打印范围",
+                    "plan": "输出 / 补页", "status": "状态"}
         limits = {"name": (self._px(90), 10_000), "pages": (self._px(34), self._px(56)),
                   "scope": (self._px(58), self._px(104)),
                   "plan": (self._px(70), self._px(132)),
@@ -391,7 +450,7 @@ class FilesPanelMixin:
         # 逐文件范围非法：只标红该行，不影响其它文件与整批统计
         self.tree.tag_configure("invalid", background=c["danger_soft"],
                                 foreground=c["danger_text"])
-        # 未单独设置：整行浅灰，表示“按上方范围打印”（ttk 不支持单元格级颜色）
+        # 未单独设置：整行浅灰，表示“按全局范围打印”（ttk 不支持单元格级颜色）
         self.tree.tag_configure("scope_auto", foreground=c["muted"])
         # 转换失败/无法读取：整行红色前景，长列表里也能一眼定位问题文件
         self.tree.tag_configure("failed", foreground=c["danger_text"])
@@ -424,7 +483,7 @@ class FilesPanelMixin:
                 status = str(values[4]) if len(values) > 4 else ""
                 tags = ["stripe"] if position % 2 else []
                 record = next((f for f in self.files if f.get("iid") == iid), None)
-                # 逐文件范围开启时：未单独设置的行整行浅灰（表示按上方范围打印）
+                # 逐文件范围开启时：未单独设置的行整行浅灰（表示按全局范围打印）
                 if (record is not None and bool(self.vars["per_file"].get())
                         and not self._record_has_custom_scope(record)):
                     tags.append("scope_auto")
@@ -541,7 +600,7 @@ class FilesPanelMixin:
                                       command=lambda: self.edit_selected_scope("range"))
         self.context_menu.add_command(label="设置份数…",
                                       command=lambda: self.edit_selected_scope("copies"))
-        self.context_menu.add_command(label="恢复按上方范围",
+        self.context_menu.add_command(label="恢复按全局范围",
                                       command=self.restore_global_for_selected)
         self.context_menu.add_command(label="应用到全部文件",
                                       command=self.apply_selected_scope_to_all)
@@ -921,11 +980,20 @@ class FilesPanelMixin:
 
     def _populate_recent_menu(self) -> None:
         self.recent_combo["values"] = list(self.recent_files)
+        self.recent_menu.delete(0, "end")
+        if self.recent_files:
+            for path in self.recent_files:
+                self.recent_menu.add_command(
+                    label=path, command=lambda value=path: self._add_recent_path(value))
+        else:
+            self.recent_menu.add_command(label="暂无最近文件", state="disabled")
         if self.recent_files and not self.recent_var.get():
             self.recent_var.set("")
 
     def _add_recent_file(self) -> None:
-        path = str(self.recent_var.get()).strip()
+        self._add_recent_path(str(self.recent_var.get()).strip())
+
+    def _add_recent_path(self, path: str) -> None:
         if path and os.path.isfile(path):
             self._add_paths([path])
         else:
@@ -1060,17 +1128,28 @@ class FilesPanelMixin:
         dialog = tk.Toplevel(self.root)
         # 同高级设置：先隐藏构建，避免可见后补内容闪一下系统底色
         dialog.withdraw()
-        dialog.title("设置范围与份数")
+        dialog.title("文件范围与份数")
         dialog.transient(self.root)
+        dialog.resizable(False, False)
         dialog.configure(background=self.colors["bg"])
         dialog.columnconfigure(0, weight=1)
+
+        header = ttk.Frame(dialog, style="Header.TFrame",
+                           padding=(self._px(20), self._px(14)))
+        header.grid(row=0, column=0, sticky="ew")
+        ttk.Label(header, text="文件范围与份数", style="HeaderTitle.TLabel").pack(anchor="w")
+        ttk.Label(header, text="为选中文件单独设置，留空的项目继续使用全局设置。",
+                  style="HeaderMuted.TLabel").pack(anchor="w", pady=(self._px(GAP_S), 0))
+        ttk.Separator(dialog, orient="horizontal", style="Line.TSeparator").grid(
+            row=1, column=0, sticky="ew")
 
         max_pages = max([int(record.get("pages") or 0) for record in selected] + [1])
         odd_text = ",".join(str(page) for page in range(1, max_pages + 1, 2))
         even_text = ",".join(str(page) for page in range(2, max_pages + 1, 2))
         last_text = str(self.recent_ranges[0]) if self.recent_ranges else ""
         preset_row = ttk.Frame(dialog)
-        preset_row.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 4))
+        preset_row.grid(row=2, column=0, sticky="w", padx=self._px(20),
+                        pady=(self._px(14), self._px(GAP_S)))
         ttk.Label(preset_row, text="常用：", style="Muted.TLabel").pack(side="left", padx=(0, 4))
 
         range_var = tk.StringVar(value=str(selected[0].get("range_text") or ""))
@@ -1083,28 +1162,30 @@ class FilesPanelMixin:
 
         for label, value in (("全部", f"1-{max_pages}"), ("仅奇数页", odd_text),
                              ("仅偶数页", even_text), ("上次使用范围", last_text)):
-            ttk.Button(preset_row, text=label, style="Ghost.TButton",
-                       command=lambda v=value: pick(v)).pack(side="left", padx=(0, 4))
+            ttk.Button(preset_row, text=label,
+                       command=lambda v=value: pick(v)).pack(
+                side="left", padx=(0, self._px(GAP_S)))
 
-        ttk.Label(dialog, text="范围（绝对页码，留空表示按上方范围打印）：").grid(
-            row=1, column=0, sticky="w", padx=10, pady=(6, 4))
-        range_entry = ttk.Entry(dialog, textvariable=range_var, width=32)
-        range_entry.grid(row=2, column=0, sticky="ew", padx=10)
-        ttk.Label(dialog, text="份数（留空表示使用上方份数）：").grid(
-            row=3, column=0, sticky="w", padx=10, pady=(8, 4))
+        ttk.Label(dialog, text="页面范围（绝对页码，留空使用全局范围）").grid(
+            row=3, column=0, sticky="w", padx=self._px(20),
+            pady=(self._px(GAP), self._px(GAP_S)))
+        range_entry = ttk.Entry(dialog, textvariable=range_var, width=34)
+        range_entry.grid(row=4, column=0, sticky="ew", padx=self._px(20))
+        ttk.Label(dialog, text="单独份数（留空使用全局份数）").grid(
+            row=5, column=0, sticky="w", padx=self._px(20),
+            pady=(self._px(GAP), self._px(GAP_S)))
         copies_spin = ttk.Spinbox(dialog, from_=1, to=99, textvariable=copies_var, width=8)
-        copies_spin.grid(row=4, column=0, sticky="w", padx=10)
+        copies_spin.grid(row=6, column=0, sticky="w", padx=self._px(20))
         scope_error_var = tk.StringVar()
-        ttk.Label(dialog, textvariable=scope_error_var,
-                  foreground=self.colors["danger"]).grid(
-            row=5, column=0, sticky="w", padx=10, pady=(4, 0))
+        ttk.Label(dialog, textvariable=scope_error_var, style="Danger.TLabel").grid(
+            row=7, column=0, sticky="w", padx=self._px(20), pady=(self._px(GAP_S), 0))
         summary_var = tk.StringVar()
-        ttk.Label(dialog, textvariable=summary_var, foreground=self.colors["muted"],
-                  justify="left", wraplength=420).grid(
-            row=6, column=0, sticky="w", padx=10, pady=(6, 0))
-        ttk.Label(dialog, text="将应用到当前选中的 %d 个文件；双击单行可快速修改同一设置。"
-                  % len(selected), foreground=self.colors["muted"], justify="left",
-                  wraplength=420).grid(row=7, column=0, sticky="w", padx=10, pady=(4, 0))
+        ttk.Label(dialog, textvariable=summary_var, style="Muted.TLabel",
+                  justify="left", wraplength=self._px(440)).grid(
+            row=8, column=0, sticky="w", padx=self._px(20), pady=(self._px(GAP_S), 0))
+        ttk.Label(dialog, text="将应用到当前选中的 %d 个文件。" % len(selected),
+                  style="Caption.TLabel", justify="left", wraplength=self._px(440)).grid(
+            row=9, column=0, sticky="w", padx=self._px(20), pady=(self._px(GAP_S), 0))
 
         def preview_text() -> None:
             """实时显示本次选取页数/补页/输出面，非法范围只在这里标红。"""
@@ -1189,19 +1270,22 @@ class FilesPanelMixin:
             for record in selected:
                 record["range_text"] = ""
                 record["copies"] = None
-            self._append_log(f"已恢复 {len(selected)} 个文件为按上方范围打印。")
+            self._append_log(f"已恢复 {len(selected)} 个文件为按全局范围打印。")
             dialog.destroy()
             self._sync_widgets()
             self._update_preview()
 
-        buttons = ttk.Frame(dialog)
-        buttons.grid(row=8, column=0, sticky="ew", padx=10, pady=10)
-        ttk.Button(buttons, text="确定", style="Accent.TButton", command=apply).pack(side="left")
-        ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="恢复按上方范围", style="Ghost.TButton",
-                   command=restore_inherit).pack(side="right")
-        ttk.Button(buttons, text="应用到全部文件", style="Ghost.TButton",
-                   command=apply_all).pack(side="right", padx=(0, 8))
+        buttons = ttk.Frame(dialog, style="Toolbar.TFrame",
+                            padding=(self._px(16), self._px(10)))
+        buttons.grid(row=10, column=0, sticky="ew",
+                     pady=(self._px(14), 0))
+        ttk.Button(buttons, text="恢复全局范围", style="ToolbarGhost.TButton",
+                   command=restore_inherit).pack(side="left")
+        ttk.Button(buttons, text="应用到全部文件", style="ToolbarGhost.TButton",
+                   command=apply_all).pack(side="left", padx=(self._px(GAP_S), 0))
+        ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="应用设置", style="Accent.TButton", command=apply).pack(
+            side="right", padx=(0, self._px(GAP)))
         dialog.bind("<Escape>", lambda _e: dialog.destroy())
         preview_text()
         dialog.update_idletasks()
@@ -1234,7 +1318,7 @@ class FilesPanelMixin:
             return
         records = self._selected_records()
         if not records:
-            self.sel_info_var.set("未选择文件")
+            self.sel_info_var.set("选择文件后可单独设置范围与份数")
         elif len(records) == 1:
             name = os.path.basename(records[0]["path"])
             # 独占一行且给足宽度：超过 26 字才省略，省略号前保留完整短名
@@ -1254,19 +1338,19 @@ class FilesPanelMixin:
             record["copies"] = copies
         self._append_log(
             f"已为 {len(records)} 个文件设置范围 {text or '全部'}、"
-            f"份数 {copies if copies is not None else '使用上方份数'}。")
+            f"份数 {copies if copies is not None else '使用全局份数'}。")
         self._sync_widgets()
         self._update_preview()
 
     def restore_global_for_selected(self) -> None:
-        """把选中文件恢复为“按上方范围打印”（清空逐文件设置）。"""
+        """把选中文件恢复为“按全局范围打印”（清空逐文件设置）。"""
         records = self._selected_records()
         if not records:
             return
         for record in records:
             record["range_text"] = ""
             record["copies"] = None
-        self._append_log(f"已恢复 {len(records)} 个文件为按上方范围打印。")
+        self._append_log(f"已恢复 {len(records)} 个文件为按全局范围打印。")
         self._sync_widgets()
         self._update_preview()
 
@@ -1284,7 +1368,7 @@ class FilesPanelMixin:
             record["copies"] = copies
         self._append_log(
             f"已将《{os.path.basename(source['path'])}》的范围 {text or '全部'}、"
-            f"份数 {copies if copies is not None else '使用上方份数'} "
+            f"份数 {copies if copies is not None else '使用全局份数'} "
             f"应用到全部 {len(self.files)} 个文件。")
         self._sync_widgets()
         self._update_preview()
@@ -1336,7 +1420,7 @@ class FilesPanelMixin:
         """“本次范围”列：未单设的文件直接显示实际生效的范围文本。
 
         逐文件开关关闭时该列不显示；开启后：
-          * 未单独设置 → 实际生效范围（如“全部”），整行浅灰（按上方范围）；
+          * 未单独设置 → 实际生效范围（如“全部”），整行浅灰（按全局范围）；
           * 已单独设置 → “＊3-7”/“＊3-7×2”（＊ 前缀 + 深色，表示单独设置过）；
           * 非法 → “＊abc 有误”；越界 → “＊9-10 越界”。
         文案都控制在短句内，1024 宽下不出现半截文字。

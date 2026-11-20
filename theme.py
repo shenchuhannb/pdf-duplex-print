@@ -18,9 +18,9 @@ from typing import Dict
 
 FONT_FAMILY = "Microsoft YaHei UI"
 # 四档字号阶梯（100% DPI 下的实际像素高度）：
-#   标题 15pt≈20px / 小标题 10pt≈13px / 正文 9pt≈12px / 辅助 8pt≈11px
+#   标题 17pt≈23px / 小标题 10pt≈13px / 正文 9pt≈12px / 辅助 8pt≈11px
 # 行高由控件 padding 统一控制（见 GAP_* 与按钮/入口 padding）。
-FONT_TITLE = (FONT_FAMILY, 15, "bold")
+FONT_TITLE = (FONT_FAMILY, 17, "bold")
 FONT_SUBTITLE = (FONT_FAMILY, 10, "bold")
 FONT_BODY = (FONT_FAMILY, 9)
 FONT_SMALL = (FONT_FAMILY, 8)
@@ -38,33 +38,34 @@ ROW_HEIGHT = 28         # 表格行高
 PALETTES: Dict[str, Dict[str, str]] = {
     # A 浅色专业风：白卡片 + 冷灰背景 + 蓝色强调
     "A": {
-        "bg": "#eef1f5",
+        "bg": "#f2f4f7",
         "surface": "#ffffff",
-        "surface_alt": "#f5f7fa",
-        "border": "#dfe4ea",
-        "text": "#1f2933",
-        # 辅助文字：在白底 4.96:1、在浅灰底 4.62:1，均达到 WCAG AA（旧值 4.25 不达标）
-        "muted": "#66717f",
+        "surface_alt": "#f6f7f9",
+        "border": "#d9dee7",
+        "border_strong": "#bdc7d4",
+        "text": "#182230",
+        "muted": "#556274",
         "accent": "#2563eb",
         "accent_hover": "#1d4ed8",
         "accent_pressed": "#1e40af",
-        "accent_soft": "#e8f0fe",
+        "accent_soft": "#eaf0fd",
         "accent_text": "#ffffff",
-        "danger": "#c01c28",
-        # 低饱和危险色（取消/清空等），与主操作的高饱和蓝明确区分
-        "danger_text": "#b04a52",
-        "danger_soft": "#fdf3f3",
-        "danger_border": "#e8cfd2",
-        "success": "#1a7f37",
-        "warning": "#9a6200",
+        "danger": "#b42318",
+        "danger_text": "#b42318",
+        "danger_soft": "#fff4f2",
+        "danger_border": "#e7b4ae",
+        "success": "#16794a",
+        "warning": "#925500",
         "input_bg": "#ffffff",
         "header_bg": "#ffffff",
-        "tree_stripe": "#f7f9fc",
-        "tree_select": "#dbeafe",
+        "tree_stripe": "#f8f9fb",
+        "tree_select": "#e2ebfc",
         "shadow": "#d7dde5",
-        # 纸张预览的轻投影（比 border 更浅，避免预览区出现厚重阴影）
-        "shadow_light": "#e9edf2",
-        "active_row": "#eef4ff",
+        "shadow_light": "#e5e9ef",
+        "active_row": "#edf3fe",
+        "preview_bg": "#eceff3",
+        "disabled_bg": "#eef0f3",
+        "disabled_text": "#626d7b",
     },
     # B 深色专业风：深灰蓝背景 + 亮蓝强调
     "B": {
@@ -182,9 +183,13 @@ def apply_theme(root: tk.Tk, style_key: str = "") -> Dict[str, str]:
     # --- 容器 ---------------------------------------------------------------
     _safe(st, "TFrame", background=colors["surface"])
     _safe(st, "Page.TFrame", background=colors["bg"])
-    _safe(st, "Card.TFrame", background=colors["surface"])
+    _safe(st, "Card.TFrame", background=colors["surface"], bordercolor=colors["border"],
+          lightcolor=colors["border"], darkcolor=colors["border"], borderwidth=1,
+          relief="solid")
     _safe(st, "Header.TFrame", background=colors["header_bg"])
     _safe(st, "Bar.TFrame", background=colors["surface"])
+    _safe(st, "Toolbar.TFrame", background=colors["surface_alt"])
+    _safe(st, "Preview.TFrame", background=colors["preview_bg"])
 
     # --- 文字 ---------------------------------------------------------------
     for name, fg in (("TLabel", colors["text"]),
@@ -194,69 +199,92 @@ def apply_theme(root: tk.Tk, style_key: str = "") -> Dict[str, str]:
                      ("Danger.TLabel", colors["danger"])):
         _safe(st, name, background=colors["surface"], foreground=fg, font=FONT_BODY)
     _safe(st, "Title.TLabel", font=FONT_TITLE)
+    _safe(st, "HeaderTitle.TLabel", background=colors["header_bg"],
+          foreground=colors["text"], font=FONT_TITLE)
+    _safe(st, "HeaderMuted.TLabel", background=colors["header_bg"],
+          foreground=colors["muted"], font=FONT_SMALL)
     _safe(st, "Subtitle.TLabel", background=colors["surface"], foreground=colors["text"],
           font=FONT_SUBTITLE)
+    _safe(st, "Section.TLabel", background=colors["surface"], foreground=colors["text"],
+          font=FONT_SUBTITLE)
     _safe(st, "Muted.TLabel", font=FONT_SMALL)
-    _safe(st, "Metric.TLabel", background=colors["surface_alt"], foreground=colors["text"],
-          font=FONT_SUBTITLE, padding=(10, 2))
-    _safe(st, "MetricCaption.TLabel", background=colors["surface_alt"],
+    _safe(st, "Caption.TLabel", background=colors["surface"], foreground=colors["muted"],
+          font=FONT_SMALL)
+    _safe(st, "Toolbar.TLabel", background=colors["surface_alt"], foreground=colors["text"],
+          font=FONT_BODY)
+    _safe(st, "ToolbarMuted.TLabel", background=colors["surface_alt"],
+          foreground=colors["muted"], font=FONT_SMALL)
+    _safe(st, "Metric.TLabel", background=colors["surface"], foreground=colors["text"],
+          font=FONT_BODY)
+    _safe(st, "MetricCaption.TLabel", background=colors["surface"],
           foreground=colors["muted"], font=FONT_SMALL)
 
     # --- 卡片（替代厚重的 LabelFrame 浮雕）-----------------------------------
     _safe(st, "TLabelframe", background=colors["surface"], bordercolor=colors["border"],
           lightcolor=colors["border"], darkcolor=colors["border"], borderwidth=1,
-          relief="flat", padding=(12, 8))
+          relief="flat", padding=(12, 10))
     _safe(st, "Card.TLabelframe", background=colors["surface"], bordercolor=colors["border"],
           lightcolor=colors["border"], darkcolor=colors["border"], borderwidth=1,
-          relief="flat", padding=(12, 10))
-    _safe(st, "TLabelframe.Label", background=colors["surface"], foreground=colors["muted"],
-          font=FONT_SUBTITLE, padding=(2, 0))
+          relief="flat", padding=(14, 12))
+    _safe(st, "TLabelframe.Label", background=colors["surface"], foreground=colors["text"],
+          font=FONT_SUBTITLE, padding=(4, 0))
     _safe(st, "Card.TLabelframe.Label", background=colors["surface"], foreground=colors["text"],
-          font=FONT_SUBTITLE, padding=(2, 0))
+          font=FONT_SUBTITLE, padding=(4, 0))
 
     # --- 按钮：flat + 悬停/按下/禁用三态；主按钮 36px、次按钮 30px ----------
     # width=0：按文字自适应宽度（ttk 默认 width=-11 会让每个按钮至少有 11 字符宽，
     # 中文界面下按钮会被撑得过大，窄窗口里整行放不下而截断）
     # focusthickness=1：键盘 Tab 聚焦时显示细描边（focus ring），不改变按钮高度。
-    _safe(st, "TButton", background=colors["surface_alt"], foreground=colors["text"],
-          bordercolor=colors["border"], lightcolor=colors["surface_alt"],
-          darkcolor=colors["surface_alt"], focusthickness=1,
+    _safe(st, "TButton", background=colors["surface"], foreground=colors["text"],
+          bordercolor=colors["border"], lightcolor=colors["border"],
+          darkcolor=colors["border"], focusthickness=1,
           focuscolor=colors["accent"], relief="flat",
-          padding=(12, 4), font=FONT_BODY, width=0)
+          padding=(11, 5), font=FONT_BODY, width=0)
     _safe_map(st, "TButton",
-              background=[("disabled", colors["surface_alt"]), ("pressed", colors["border"]),
-                          ("active", colors["accent_soft"])],
-              foreground=[("disabled", colors["muted"]), ("active", colors["text"])],
-              bordercolor=[("active", colors["accent"])],
+              background=[("disabled", colors["disabled_bg"]), ("pressed", colors["border"]),
+                          ("active", colors["surface_alt"])],
+              foreground=[("disabled", colors["disabled_text"]), ("active", colors["text"])],
+              bordercolor=[("focus", colors["accent"]), ("active", colors["border_strong"]),
+                           ("disabled", colors["border"])],
               relief=[("pressed", "flat")])
     # 主按钮更高（padding 12,9 ≈ 36px）且加粗，靠高度+颜色形成唯一主操作
     _safe(st, "Accent.TButton", background=colors["accent"], foreground=colors["accent_text"],
           bordercolor=colors["accent"], lightcolor=colors["accent"],
-          darkcolor=colors["accent"], focusthickness=1, focuscolor=colors["accent"],
-          relief="flat", padding=(22, 9), font=(FONT_FAMILY, 9, "bold"), width=0)
+          darkcolor=colors["accent"], focusthickness=1, focuscolor=colors["accent_pressed"],
+          relief="flat", padding=(20, 7), font=(FONT_FAMILY, 9, "bold"), width=0)
     _safe_map(st, "Accent.TButton",
-              background=[("disabled", colors["border"]), ("pressed", colors["accent_pressed"]),
+              background=[("disabled", colors["disabled_bg"]), ("pressed", colors["accent_pressed"]),
                           ("active", colors["accent_hover"])],
-              foreground=[("disabled", colors["muted"]), ("pressed", colors["accent_text"]),
+              foreground=[("disabled", colors["disabled_text"]), ("pressed", colors["accent_text"]),
                           ("active", colors["accent_text"])],
               bordercolor=[("disabled", colors["border"]), ("active", colors["accent_hover"]),
                            ("pressed", colors["accent_pressed"])])
-    _safe(st, "Ghost.TButton", background=colors["surface"], foreground=colors["muted"],
+    _safe(st, "Ghost.TButton", background=colors["surface"], foreground=colors["text"],
           bordercolor=colors["surface"], lightcolor=colors["surface"],
           darkcolor=colors["surface"], focusthickness=1, focuscolor=colors["accent"],
-          relief="flat", padding=(10, 4), font=FONT_BODY, width=0)
+          relief="flat", padding=(9, 5), font=FONT_BODY, width=0)
     _safe_map(st, "Ghost.TButton",
               background=[("active", colors["surface_alt"]), ("pressed", colors["border"]),
                           ("disabled", colors["surface"])],
-              foreground=[("active", colors["text"]), ("disabled", colors["muted"])],
-              bordercolor=[("active", colors["border"])])
+              foreground=[("active", colors["text"]), ("disabled", colors["disabled_text"])],
+              bordercolor=[("focus", colors["accent"]), ("active", colors["border"])])
+    _safe(st, "ToolbarGhost.TButton", background=colors["surface_alt"],
+          foreground=colors["text"], bordercolor=colors["surface_alt"],
+          lightcolor=colors["surface_alt"], darkcolor=colors["surface_alt"],
+          focusthickness=1, focuscolor=colors["accent"], relief="flat",
+          padding=(9, 4), font=FONT_BODY, width=0)
+    _safe_map(st, "ToolbarGhost.TButton",
+              background=[("active", colors["surface"]), ("pressed", colors["border"]),
+                          ("disabled", colors["surface_alt"])],
+              foreground=[("active", colors["text"]), ("disabled", colors["disabled_text"])],
+              bordercolor=[("focus", colors["accent"]), ("active", colors["border"])])
     # 次主按钮（如“＋ 添加文件”）：浅蓝底 + 蓝字，比默认灰按钮更醒目，
     # 但仍低于实心 Accent 主操作（开始打印），形成“主 > 次主 > 普通 > 危险”层级。
     _safe(st, "Soft.TButton", background=colors["accent_soft"],
-          foreground=colors["accent"], bordercolor=colors["accent_soft"],
+          foreground=colors["accent_pressed"], bordercolor=colors["accent_soft"],
           lightcolor=colors["accent_soft"], darkcolor=colors["accent_soft"],
           focusthickness=1, focuscolor=colors["accent"], relief="flat",
-          padding=(12, 4), font=(FONT_FAMILY, 9, "bold"), width=0)
+          padding=(12, 5), font=(FONT_FAMILY, 9, "bold"), width=0)
     _safe_map(st, "Soft.TButton",
               background=[("disabled", colors["surface_alt"]),
                           ("pressed", colors["accent_soft"]),
@@ -277,18 +305,35 @@ def apply_theme(root: tk.Tk, style_key: str = "") -> Dict[str, str]:
               bordercolor=[("active", colors["danger_text"]),
                            ("disabled", colors["border"])])
 
+    _safe(st, "TMenubutton", background=colors["surface"], foreground=colors["text"],
+          bordercolor=colors["border"], lightcolor=colors["border"],
+          darkcolor=colors["border"], focusthickness=1, focuscolor=colors["accent"],
+          relief="flat", padding=(10, 5), font=FONT_BODY, arrowcolor=colors["muted"])
+    _safe(st, "Ghost.TMenubutton", background=colors["surface"], foreground=colors["text"],
+          bordercolor=colors["surface"], lightcolor=colors["surface"],
+          darkcolor=colors["surface"], focusthickness=1, focuscolor=colors["accent"],
+          relief="flat", padding=(9, 5), font=FONT_BODY, arrowcolor=colors["muted"])
+    _safe_map(st, "TMenubutton",
+              background=[("active", colors["surface_alt"]), ("disabled", colors["disabled_bg"])],
+              foreground=[("active", colors["text"]), ("disabled", colors["disabled_text"])],
+              bordercolor=[("focus", colors["accent"]), ("active", colors["border_strong"])])
+    _safe_map(st, "Ghost.TMenubutton",
+              background=[("active", colors["surface_alt"]), ("disabled", colors["surface"])],
+              foreground=[("active", colors["text"]), ("disabled", colors["disabled_text"])],
+              bordercolor=[("focus", colors["accent"]), ("active", colors["border"])])
+
     # --- 输入类控件 ---------------------------------------------------------
     for name in ("TEntry", "TSpinbox", "TCombobox"):
         _safe(st, name, fieldbackground=colors["input_bg"], background=colors["input_bg"],
               foreground=colors["text"], bordercolor=colors["border"],
               lightcolor=colors["border"], darkcolor=colors["border"],
-              insertcolor=colors["text"], relief="flat", padding=(8, 2), arrowcolor=colors["muted"])
+              insertcolor=colors["text"], relief="flat", padding=(8, 4), arrowcolor=colors["muted"])
     _safe_map(st, "TEntry",
               bordercolor=[("focus", colors["accent"])],
               lightcolor=[("focus", colors["accent"])],
               darkcolor=[("focus", colors["accent"])],
-              fieldbackground=[("disabled", colors["surface_alt"])],
-              foreground=[("disabled", colors["muted"])])
+              fieldbackground=[("disabled", colors["disabled_bg"])],
+              foreground=[("disabled", colors["disabled_text"])])
     # 校验失败态：仅换描边颜色（不增加边框厚度），配合下方预留错误行使用
     _safe(st, "Error.TEntry", fieldbackground=colors["input_bg"], foreground=colors["text"],
           bordercolor=colors["danger"], lightcolor=colors["danger"],
@@ -303,14 +348,14 @@ def apply_theme(root: tk.Tk, style_key: str = "") -> Dict[str, str]:
               lightcolor=[("focus", colors["accent"])],
               darkcolor=[("focus", colors["accent"])],
               fieldbackground=[("readonly", colors["surface"]),
-                               ("disabled", colors["surface_alt"])],
-              foreground=[("readonly", colors["text"]), ("disabled", colors["muted"]),
+                               ("disabled", colors["disabled_bg"])],
+              foreground=[("readonly", colors["text"]), ("disabled", colors["disabled_text"]),
                           ("active", colors["text"])],
               arrowcolor=[("active", colors["accent"])])
     _safe_map(st, "TSpinbox",
               bordercolor=[("focus", colors["accent"])],
-              fieldbackground=[("disabled", colors["surface_alt"])],
-              foreground=[("disabled", colors["muted"])])
+              fieldbackground=[("disabled", colors["disabled_bg"])],
+              foreground=[("disabled", colors["disabled_text"])])
     # 份数专用：数字与右侧上下箭头之间必须留出空隙。默认 TSpinbox 的 8px 横向
     # padding 在高 DPI 下会被箭头吃掉，出现“9999 贴住箭头/末位被压”；这里加大
     # 横向 padding 并略增纵向 padding，配合 width=5 保证 4 位数字完整显示。
@@ -323,8 +368,8 @@ def apply_theme(root: tk.Tk, style_key: str = "") -> Dict[str, str]:
               bordercolor=[("focus", colors["accent"])],
               lightcolor=[("focus", colors["accent"])],
               darkcolor=[("focus", colors["accent"])],
-              fieldbackground=[("disabled", colors["surface_alt"])],
-              foreground=[("disabled", colors["muted"])],
+              fieldbackground=[("disabled", colors["disabled_bg"])],
+              foreground=[("disabled", colors["disabled_text"])],
               arrowcolor=[("active", colors["accent"])])
 
     # --- 选择控件 -----------------------------------------------------------
@@ -333,7 +378,7 @@ def apply_theme(root: tk.Tk, style_key: str = "") -> Dict[str, str]:
               focuscolor=colors["accent"], font=FONT_BODY, padding=(2, 3))
         _safe_map(st, name,
                   background=[("active", colors["surface"])],
-                  foreground=[("disabled", colors["muted"]), ("active", colors["text"])],
+                  foreground=[("disabled", colors["disabled_text"]), ("active", colors["text"])],
                   indicatorcolor=[("selected", colors["accent"]),
                                   ("disabled", colors["border"])])
 
@@ -360,15 +405,16 @@ def apply_theme(root: tk.Tk, style_key: str = "") -> Dict[str, str]:
               background=[("selected", colors["tree_select"])],
               foreground=[("selected", colors["text"])])
     _safe(st, "Treeview.Heading", background=colors["surface_alt"],
-          foreground=colors["muted"], bordercolor=colors["border"],
+          foreground=colors["text"], bordercolor=colors["border"],
           lightcolor=colors["border"], darkcolor=colors["border"],
-          relief="flat", font=FONT_SMALL, padding=(6, 6))
-    _safe_map(st, "Treeview.Heading", background=[("active", colors["border"])])
+          relief="flat", font=(FONT_FAMILY, 8, "bold"), padding=(7, 6))
+    _safe_map(st, "Treeview.Heading", background=[("active", colors["border"])],
+              foreground=[("active", colors["text"])])
 
     # --- 进度条 / 滚动条（细滚动条：12px 宽，无浮雕箭头底）------------------
-    _safe(st, "TProgressbar", background=colors["accent"], troughcolor=colors["surface_alt"],
-          bordercolor=colors["surface_alt"], lightcolor=colors["accent"],
-          darkcolor=colors["accent"], thickness=8)
+    _safe(st, "TProgressbar", background=colors["accent"], troughcolor=colors["border"],
+          bordercolor=colors["border"], lightcolor=colors["accent"],
+          darkcolor=colors["accent"], thickness=6)
     for name, orient in (("Thin.Vertical.TScrollbar", "vertical"),
                          ("Thin.Horizontal.TScrollbar", "horizontal")):
         _safe(st, name, background=colors["surface_alt"], troughcolor=colors["surface_alt"],
@@ -385,6 +431,20 @@ def apply_theme(root: tk.Tk, style_key: str = "") -> Dict[str, str]:
     # --- 分隔线：1px 浅灰 ---------------------------------------------------
     _safe(st, "Line.TSeparator", background=colors["border"])
     _safe(st, "VSep.TSeparator", background=colors["border"])
+    for option, value in (
+            ("*TCombobox*Listbox.background", colors["input_bg"]),
+            ("*TCombobox*Listbox.foreground", colors["text"]),
+            ("*TCombobox*Listbox.selectBackground", colors["tree_select"]),
+            ("*TCombobox*Listbox.selectForeground", colors["text"]),
+            ("*Menu.background", colors["surface"]),
+            ("*Menu.foreground", colors["text"]),
+            ("*Menu.activeBackground", colors["accent_soft"]),
+            ("*Menu.activeForeground", colors["accent_pressed"]),
+            ("*Menu.disabledForeground", colors["disabled_text"])):
+        try:
+            root.option_add(option, value)
+        except tk.TclError:
+            pass
     return colors
 
 

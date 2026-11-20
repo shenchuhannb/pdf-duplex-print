@@ -898,11 +898,15 @@ class WorkerMixin:
             dialog = tk.Toplevel(self.root)
             dialog.withdraw()
             dialog.title(title)
+            dialog.transient(self.root)
             dialog.configure(background=self.colors["surface"])
             dialog.resizable(False, False)
-            body = ttk.Frame(dialog, padding=(16, 14))
+            body = ttk.Frame(dialog, padding=(self._px(20), self._px(16)))
             body.pack(fill="both", expand=True)
-            ttk.Label(body, text=title, style="Subtitle.TLabel").pack(anchor="w")
+            ttk.Label(body, text=title, style="Title.TLabel", wraplength=self._px(540),
+                      justify="left").pack(anchor="w")
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(12), 0))
             if mode == "batch" and group_done is not None and group_total is not None:
                 progress_line = (f"进度：已取出 {group_done}/{group_total} 个文件的反面，"
                                  f"剩余 {max(0, group_total - group_done)} 个文件的反面")
@@ -938,8 +942,10 @@ class WorkerMixin:
                     pass
                 dialog.destroy()
 
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(14), 0))
             buttons = ttk.Frame(body)
-            buttons.pack(fill="x", pady=(14, 0))
+            buttons.pack(fill="x", pady=(self._px(10), 0))
             if mode == "batch":
                 action_text = "已取出，继续打印反面"
             elif final:
@@ -948,7 +954,7 @@ class WorkerMixin:
                 action_text = "已取出，打印下一个文件"
             ttk.Button(buttons, text=action_text, style="Accent.TButton",
                        command=lambda: finish("continue")).pack(side="left")
-            ttk.Button(buttons, text="取消打印", style="Ghost.TButton",
+            ttk.Button(buttons, text="取消打印", style="Danger.TButton",
                        command=lambda: finish("cancel")).pack(side="left", padx=(10, 0))
             dialog.protocol("WM_DELETE_WINDOW", lambda: finish("cancel"))
             dialog.bind("<Escape>", lambda _e: finish("cancel"))
@@ -956,12 +962,14 @@ class WorkerMixin:
             self._place_toplevel_over_root(
                 dialog, dialog.winfo_reqwidth() + self._px(8),
                 dialog.winfo_reqheight() + self._px(8))
+            offscreen_alpha = getattr(self, "offscreen_dialog_alpha", None)
+            if offscreen_alpha is not None:
+                dialog.attributes("-alpha", float(offscreen_alpha))
             dialog.deiconify()
-            if getattr(self, "offscreen_dialog_alpha", None) is not None:
-                dialog.attributes("-alpha", float(self.offscreen_dialog_alpha))
             dialog.lift()
             dialog.grab_set()
-            dialog.focus_force()
+            if offscreen_alpha is None:
+                dialog.focus_force()
             dialog.wait_window()
         except tk.TclError:
             return "cancel"
@@ -980,11 +988,15 @@ class WorkerMixin:
             dialog = tk.Toplevel(self.root)
             dialog.withdraw()
             dialog.title(title)
+            dialog.transient(self.root)
             dialog.configure(background=self.colors["surface"])
             dialog.resizable(False, False)
-            body = ttk.Frame(dialog, padding=(16, 14))
+            body = ttk.Frame(dialog, padding=(self._px(20), self._px(16)))
             body.pack(fill="both", expand=True)
-            ttk.Label(body, text=title, style="Subtitle.TLabel").pack(anchor="w")
+            ttk.Label(body, text=title, style="Title.TLabel", wraplength=self._px(540),
+                      justify="left").pack(anchor="w")
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(12), 0))
             info = [
                 "该批所有文件的反面已打印完成。",
                 f"张数：共 {sheets} 张纸（单面朝下时按打印机出纸方向整理）。",
@@ -1006,11 +1018,13 @@ class WorkerMixin:
                     pass
                 dialog.destroy()
 
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(14), 0))
             buttons = ttk.Frame(body)
-            buttons.pack(fill="x", pady=(14, 0))
+            buttons.pack(fill="x", pady=(self._px(10), 0))
             ttk.Button(buttons, text="已取出，全部完成", style="Accent.TButton",
                        command=lambda: finish("continue")).pack(side="left")
-            ttk.Button(buttons, text="取消打印", style="Ghost.TButton",
+            ttk.Button(buttons, text="取消打印", style="Danger.TButton",
                        command=lambda: finish("cancel")).pack(side="left", padx=(10, 0))
             dialog.protocol("WM_DELETE_WINDOW", lambda: finish("cancel"))
             dialog.bind("<Escape>", lambda _e: finish("cancel"))
@@ -1018,12 +1032,14 @@ class WorkerMixin:
             self._place_toplevel_over_root(
                 dialog, dialog.winfo_reqwidth() + self._px(8),
                 dialog.winfo_reqheight() + self._px(8))
+            offscreen_alpha = getattr(self, "offscreen_dialog_alpha", None)
+            if offscreen_alpha is not None:
+                dialog.attributes("-alpha", float(offscreen_alpha))
             dialog.deiconify()
-            if getattr(self, "offscreen_dialog_alpha", None) is not None:
-                dialog.attributes("-alpha", float(self.offscreen_dialog_alpha))
             dialog.lift()
             dialog.grab_set()
-            dialog.focus_force()
+            if offscreen_alpha is None:
+                dialog.focus_force()
             dialog.wait_window()
         except tk.TclError:
             return "cancel"
@@ -1098,17 +1114,23 @@ class WorkerMixin:
             dialog = tk.Toplevel(self.root)
             dialog.withdraw()
             dialog.title(title)
+            dialog.transient(self.root)
             dialog.configure(background=self.colors["surface"])
             dialog.resizable(False, False)
-            body = ttk.Frame(dialog, padding=(16, 14))
+            body = ttk.Frame(dialog, padding=(self._px(20), self._px(16)))
             body.pack(fill="both", expand=True)
-            ttk.Label(body, text=title, style="Subtitle.TLabel").pack(anchor="w")
+            ttk.Label(body, text=title, style="Title.TLabel", wraplength=self._px(540),
+                      justify="left").pack(anchor="w")
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(12), 0))
             for line in detail_lines:
                 ttk.Label(body, text=line, justify="left", wraplength=self._px(540),
                           foreground=self.colors["text"]).pack(anchor="w", pady=(6, 0))
-            ttk.Label(body, text=sample, font=_theme.FONT_SMALL,
-                      foreground=self.colors["accent"], justify="left",
-                      wraplength=self._px(540)).pack(anchor="w", pady=(10, 0))
+            tk.Label(body, text=sample, font=_theme.FONT_SMALL,
+                     background=self.colors["accent_soft"],
+                     foreground=self.colors["accent_pressed"], justify="left",
+                     padx=self._px(10), pady=self._px(8),
+                     wraplength=self._px(520)).pack(fill="x", pady=(self._px(12), 0))
             ttk.Label(body, text="关闭窗口或按 Esc 等同于取消；本工具不会自动继续。",
                       style="Muted.TLabel").pack(anchor="w", pady=(10, 0))
 
@@ -1120,12 +1142,14 @@ class WorkerMixin:
                     pass
                 dialog.destroy()
 
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(14), 0))
             buttons = ttk.Frame(body)
-            buttons.pack(fill="x", pady=(14, 0))
+            buttons.pack(fill="x", pady=(self._px(10), 0))
             confirm = ttk.Button(buttons, text="已翻面，继续打印反面",
                                  style="Accent.TButton", command=lambda: finish(True))
             confirm.pack(side="left")
-            ttk.Button(buttons, text="取消打印", style="Ghost.TButton",
+            ttk.Button(buttons, text="取消打印", style="Danger.TButton",
                        command=lambda: finish(False)).pack(side="left", padx=(10, 0))
             dialog.protocol("WM_DELETE_WINDOW", lambda: finish(False))
             dialog.bind("<Escape>", lambda _e: finish(False))
@@ -1133,12 +1157,14 @@ class WorkerMixin:
             self._place_toplevel_over_root(
                 dialog, dialog.winfo_reqwidth() + self._px(8),
                 dialog.winfo_reqheight() + self._px(8))
+            offscreen_alpha = getattr(self, "offscreen_dialog_alpha", None)
+            if offscreen_alpha is not None:
+                dialog.attributes("-alpha", float(offscreen_alpha))
             dialog.deiconify()
-            if getattr(self, "offscreen_dialog_alpha", None) is not None:
-                dialog.attributes("-alpha", float(self.offscreen_dialog_alpha))
             dialog.lift()
             dialog.grab_set()
-            dialog.focus_force()
+            if offscreen_alpha is None:
+                dialog.focus_force()
             confirm.focus_set()
             dialog.wait_window()
         except tk.TclError:

@@ -94,17 +94,31 @@ class PreviewMixin:
         """常规两行：翻页/缩放 + 拼版/方向；窄窗口再把缩放独立成行。"""
         if not hasattr(self, "page_group"):
             return
-        compact = width < self._px(510)
-        if compact:
+        try:
+            short_split = (self.layout_scheme == "split"
+                           and self.root.winfo_height() < self._px(820))
+        except tk.TclError:
+            return
+        if short_split:
+            self.zoom_group.grid_remove()
             self.tool_sep.grid_remove()
-            self.zoom_group.grid_configure(row=1, column=0, sticky="w",
-                                           pady=(self._px(GAP_S), 0))
+            self.layout_group.grid_configure(
+                row=0, column=2, columnspan=1, sticky="w",
+                padx=(self._px(GAP_CARD), 0), pady=0)
         else:
-            self.zoom_group.grid_configure(row=0, column=2, sticky="w", pady=0)
-            self.tool_sep.grid()
-        self.layout_group.grid_configure(
-            row=2 if compact else 1, column=0, columnspan=3, sticky="w",
-            pady=(self._px(GAP_S), 0))
+            compact = width < self._px(510)
+            self.zoom_group.grid()
+            self.layout_group.grid_configure(padx=0)
+            if compact:
+                self.tool_sep.grid_remove()
+                self.zoom_group.grid_configure(row=1, column=0, sticky="w",
+                                               pady=(self._px(GAP_S), 0))
+            else:
+                self.zoom_group.grid_configure(row=0, column=2, sticky="w", pady=0)
+                self.tool_sep.grid()
+            self.layout_group.grid_configure(
+                row=2 if compact else 1, column=0, columnspan=3, sticky="w",
+                pady=(self._px(GAP_S), 0))
         # 状态条宽度不足时隐藏快捷键提示（信息随窗口宽度增减，不推挤其它段）
         if hasattr(self, "shortcut_hint_label"):
             try:
@@ -177,22 +191,24 @@ class PreviewMixin:
         head = ttk.Frame(frame)
         head.grid(row=0, column=0, sticky="ew")
         head.columnconfigure(2, weight=1)
-        ttk.Label(head, text="打印预览", style="Subtitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(head, text="成纸预览", style="Subtitle.TLabel").grid(row=0, column=0, sticky="w")
         # 实际缩放百分比做成轻量徽标（浅底小胶囊），不再是一行纯文字
         self.actual_scale_var = tk.StringVar(value="实际 —")
-        badge = tk.Frame(head, background=self.colors["surface_alt"],
-                         highlightthickness=1, highlightbackground=self.colors["border"])
+        badge = tk.Frame(head, background=self.colors["accent_soft"])
         badge.grid(row=0, column=1, sticky="w", padx=(self._px(GAP), self._px(GAP)))
-        tk.Label(badge, textvariable=self.actual_scale_var, background=self.colors["surface_alt"],
-                 foreground=self.colors["accent"], font=_theme.FONT_SMALL,
-                 padx=self._px(6), pady=self._px(1)).pack()
+        tk.Label(badge, textvariable=self.actual_scale_var, background=self.colors["accent_soft"],
+                 foreground=self.colors["accent_pressed"], font=_theme.FONT_SMALL,
+                 padx=self._px(7), pady=self._px(2)).pack()
         ttk.Label(head, text="视图", style="Muted.TLabel").grid(
             row=0, column=3, sticky="e", padx=(0, self._px(GAP_S)))
-        ttk.Radiobutton(head, text="单页", value="single", variable=self.preview_view_var,
-                        command=self._on_preview_view_change).grid(
-            row=0, column=4, padx=(0, self._px(GAP_S)))
-        ttk.Radiobutton(head, text="双页", value="spread", variable=self.preview_view_var,
-                        command=self._on_preview_view_change).grid(row=0, column=5)
+        self.preview_single_radio = ttk.Radiobutton(
+            head, text="单页", value="single", variable=self.preview_view_var,
+            command=self._on_preview_view_change)
+        self.preview_single_radio.grid(row=0, column=4, padx=(0, self._px(GAP_S)))
+        self.preview_spread_radio = ttk.Radiobutton(
+            head, text="双页", value="spread", variable=self.preview_view_var,
+            command=self._on_preview_view_change)
+        self.preview_spread_radio.grid(row=0, column=5)
         ttk.Separator(head, orient="vertical", style="VSep.TSeparator").grid(
             row=0, column=6, sticky="ns", padx=self._px(GAP), pady=self._px(2))
         self.preview_refresh_btn = ttk.Button(head, text="刷新", width=4,
@@ -273,7 +289,7 @@ class PreviewMixin:
         # 按 4:3 上限收缩并水平居中（sticky 不含 ew），避免 1024 宽时画布
         # 变成“扁横幅”，纸张图始终按可用空间等比居中。
         self.preview_canvas = tk.Canvas(
-            frame, background=self.colors["surface_alt"], highlightthickness=1,
+            frame, background=self.colors["preview_bg"], highlightthickness=1,
             highlightbackground=self.colors["border"], borderwidth=0,
             width=self._px(420), height=self._px(240))
         self.preview_canvas.grid(row=2, column=0, sticky="ns", pady=(self._px(GAP), 0))
@@ -905,7 +921,7 @@ class PreviewMixin:
         if width < 80 or height < 80:
             return
         if self.preview_pages <= 0 or not self.preview_pngs:
-            canvas.configure(background=self.colors["surface_alt"])
+            canvas.configure(background=self.colors["preview_bg"])
             self._draw_preview_empty(canvas, width, height)
             self._update_preview_status_strip([])
             return
@@ -927,35 +943,34 @@ class PreviewMixin:
         self._update_preview_status_strip(indexes)
 
     def _draw_preview_empty(self, canvas: tk.Canvas, width: int, height: int) -> None:
-        """空状态：虚线拖拽框 + 纸张图形 + 引导文案，而不是一块空灰。"""
+        """空状态只保留纸张图示和下一步，不再嵌套一个拖拽卡片。"""
         c = self.colors
         has_files = bool(self.files)
-        box_w = min(width - self._px(40), self._px(360))
-        box_h = min(height - self._px(48), self._px(210))
-        x0, y0 = (width - box_w) / 2, (height - box_h) / 2
-        x1, y1 = x0 + box_w, y0 + box_h
-        canvas.create_rectangle(x0, y0, x1, y1, outline=c["border"], dash=(6, 4), width=1)
-
-        # 纸张图形：白纸 + 折角 + 三条正文占位线（纯 Canvas 绘制，无位图依赖）
-        sheet_w = self._px(54)
-        sheet_h = self._px(70)
-        sx, sy = width / 2 - sheet_w / 2, y0 + self._px(22)
+        sheet_w = self._px(48)
+        sheet_h = self._px(64)
+        total_h = self._px(142)
+        sx = width / 2 - sheet_w / 2
+        sy = max(self._px(12), (height - total_h) / 2)
+        canvas.create_rectangle(sx + self._px(3), sy + self._px(3),
+                                sx + sheet_w + self._px(3), sy + sheet_h + self._px(3),
+                                fill=c["shadow_light"], outline="")
         canvas.create_rectangle(sx, sy, sx + sheet_w, sy + sheet_h,
-                                fill=c["surface"], outline=c["border"], width=1)
-        fold = self._px(14)
+                                fill=c["surface"], outline=c["border_strong"], width=1)
+        fold = self._px(12)
         canvas.create_polygon(sx + sheet_w - fold, sy, sx + sheet_w, sy + fold,
                               sx + sheet_w - fold, sy + fold,
-                              fill=c["surface_alt"], outline=c["border"])
+                              fill=c["accent_soft"], outline=c["border_strong"])
         for line in range(3):
-            ly = sy + self._px(30) + line * self._px(10)
-            canvas.create_line(sx + self._px(10), ly, sx + sheet_w - self._px(10), ly,
-                               fill=c["border"])
-        canvas.create_text(width / 2, sy + sheet_h + self._px(18),
-                           text="将 PDF / Word / 图片拖到这里" if not has_files else "正在生成预览…",
-                           fill=c["text"], font=(_theme.FONT_FAMILY, 10, "bold"))
+            ly = sy + self._px(27) + line * self._px(9)
+            canvas.create_line(sx + self._px(9), ly, sx + sheet_w - self._px(9), ly,
+                               fill=c["border_strong"])
         canvas.create_text(
-            width / 2, sy + sheet_h + self._px(40),
-            text="或点击左侧「＋ 添加文件」\nWord / 图片会自动转成 PDF 再打印",
+            width / 2, sy + sheet_h + self._px(18),
+            text="添加文件后显示实际打印效果" if not has_files else "正在生成成纸预览…",
+            fill=c["text"], font=_theme.FONT_SUBTITLE)
+        canvas.create_text(
+            width / 2, sy + sheet_h + self._px(43),
+            text="在左侧添加 PDF、Word 或图片" if not has_files else "正在按当前纸张与拼版设置渲染",
             fill=c["muted"], font=_theme.FONT_SMALL, justify="center", anchor="n")
 
     def _update_preview_status_strip(self, indexes: List[int]) -> None:

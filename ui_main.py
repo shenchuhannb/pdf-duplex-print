@@ -429,6 +429,7 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         left.columnconfigure(0, weight=1)
         left.rowconfigure(0, weight=3, minsize=self._px(200))
         left.rowconfigure(1, weight=4, minsize=self._px(240))
+        self._split_left = left
 
         files_card = ttk.Frame(left, style="Card.TFrame", padding=self._card_padding())
         files_card.grid(row=0, column=0, sticky="nsew", pady=(0, self._px(GAP_CARD)))
@@ -458,103 +459,107 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         if getattr(event, "widget", None) is not self.root:
             return
         self._layout_header_compact()
+        self._sync_file_panel_density()
+        self._sync_workspace_density()
         self._sync_preview_info_visibility()
         self._resize_log_for_window()
         self._schedule_live_refresh()
 
-    def _build_header(self, parent: tk.Frame) -> None:
-        """顶部标题/状态条：品牌标识 + 标题 + 关键指标 + 打印机状态。
+    def _sync_workspace_density(self) -> None:
+        if self.layout_scheme != "split" or not hasattr(self, "_split_left"):
+            return
+        try:
+            compact = self.root.winfo_height() < self._px(820)
+        except tk.TclError:
+            return
+        if compact:
+            self._split_left.rowconfigure(0, weight=1, minsize=self._px(210))
+            self._split_left.rowconfigure(1, weight=1, minsize=self._px(250))
+        else:
+            self._split_left.rowconfigure(0, weight=3, minsize=self._px(200))
+            self._split_left.rowconfigure(1, weight=4, minsize=self._px(240))
+        self.preview_frame.rowconfigure(2, minsize=self._px(120 if compact else 180))
 
-        指标徽标使用固定宽度容器（宽度不随数字长度变化），数字与标签都按
-        relx=0.5 放在卡片正中，使用同一中轴；数字用等宽数字字体 Segoe UI，
-        位数变化（1→123）只在卡片内居中，不推动相邻徽标、也不会左右漂移。
-        """
+    def _build_header(self, parent: tk.Frame) -> None:
+        """精简应用栏：产品、真实任务步骤、批次摘要和打印机状态。"""
         c = self.colors
-        header = tk.Frame(parent, background=c["header_bg"], height=self._px(72),
+        header = tk.Frame(parent, background=c["header_bg"], height=self._px(66),
                           highlightthickness=1, highlightbackground=c["border"])
         header.grid(row=0, column=0, sticky="ew")
         header.grid_propagate(False)
-        header.columnconfigure(2, weight=1)
+        header.columnconfigure(1, weight=1)
         self.header_frame = header
-        self._header_full_height = self._px(72)
-        self._header_compact_height = self._px(58)
+        self._header_full_height = self._px(66)
+        self._header_compact_height = self._px(54)
 
-        mark = tk.Frame(header, background=c["accent"], width=self._px(36),
-                        height=self._px(36))
-        mark.grid(row=0, column=0, rowspan=2, padx=(self._px(12), self._px(10)),
-                  pady=self._px(12))
-        mark.pack_propagate(False)
-        tk.Label(mark, text="PDF", background=c["accent"], foreground=c["accent_text"],
-                 font=(_theme.FONT_FAMILY, 10, "bold")).place(relx=0.5, rely=0.5, anchor="center")
+        mark = tk.Canvas(header, width=self._px(32), height=self._px(36),
+                         background=c["header_bg"], highlightthickness=0,
+                         borderwidth=0)
+        mark.grid(row=0, column=0, rowspan=2, padx=(self._px(14), self._px(10)),
+                  pady=self._px(10))
+        s = self.ui_scale
+        mark.create_rectangle(9*s, 3*s, 29*s, 29*s, fill=c["accent_soft"],
+                              outline=c["accent"], width=max(1, int(s)))
+        mark.create_rectangle(3*s, 8*s, 23*s, 34*s, fill=c["accent"],
+                              outline=c["accent"])
+        for y, width in ((16, 11), (22, 11), (28, 7)):
+            mark.create_line(8*s, y*s, (8+width)*s, y*s,
+                             fill=c["accent_text"], width=max(1, int(s)))
 
         self.header_title_label = tk.Label(
             header, text="PDF 批量双面打印", background=c["header_bg"],
             foreground=c["text"], font=_theme.FONT_TITLE, anchor="w")
-        self.header_title_label.grid(row=0, column=1, sticky="sw", pady=(self._px(14), 0))
-        # 主流程步骤图：① 选文件 → ② 转换 → ③ 打印。
-        # 旧版这里是一行静态卖点文字，用户无法判断“现在该做什么”；
-        # 改为三步骤图，当前步骤加粗高亮、已完成转绿，转换失败转红。
+        self.header_title_label.grid(row=0, column=1, sticky="sw",
+                                     pady=(self._px(9), 0))
         steps = tk.Frame(header, background=c["header_bg"])
-        steps.grid(row=1, column=1, sticky="nw", pady=(self._px(2), self._px(10)))
+        steps.grid(row=1, column=1, sticky="nw", pady=(0, self._px(8)))
         self.header_steps_frame = steps
         self.step_labels: List[tk.Label] = []
-        self.step_captions = ("① 选文件", "② 转换", "③ 打印")
+        self.step_captions = ("① 选择文件", "② 转换", "③ 打印")
         self.step_states: Tuple[str, str, str] = ("active", "pending", "pending")
         for index, caption in enumerate(self.step_captions):
             if index:
                 tk.Label(steps, text="›", background=c["header_bg"],
-                         foreground=c["border"], font=_theme.FONT_SMALL).pack(
+                         foreground=c["border_strong"], font=_theme.FONT_SMALL).pack(
                     side="left", padx=self._px(6))
             label = tk.Label(steps, text=caption, background=c["header_bg"],
                              foreground=c["muted"], font=_theme.FONT_SMALL, anchor="w")
             label.pack(side="left")
             self.step_labels.append(label)
-        # 兼容旧方法名：紧凑模式显隐同一个控件
         self.header_subtitle_label = steps
 
         metrics = tk.Frame(header, background=c["header_bg"])
-        metrics.grid(row=0, column=2, rowspan=2, sticky="e", padx=(self._px(8), self._px(10)))
+        metrics.grid(row=0, column=2, rowspan=2, sticky="e",
+                     padx=(self._px(GAP), self._px(16)))
+        self.header_metrics_frame = metrics
         self.metric_chips: Dict[str, dict] = {}
-        metric_defs = (("files", "文件"), ("pages", "选取页"), ("sheets", "预计张数"),
-                       ("flips", "翻面次数"))
-        # 徽标尺寸按实际字体行高计算：150% 下数字行高会明显变大，
-        # 固定 48px 高 + 固定 y 会让数字与下方说明文字重叠。
-        chip_top = self._px(3)
-        for index, (key, caption) in enumerate(metric_defs):
-            # 固定宽度 88px：数字位数变化（1→123）只在本框内居中，不推动相邻徽标
-            chip = tk.Frame(metrics, background=c["surface_alt"], width=self._px(88),
-                            highlightthickness=1, highlightbackground=c["border"])
-            chip.grid(row=0, column=index, padx=(0, self._px(GAP)))
-            chip.grid_propagate(False)
-            value_label = tk.Label(
-                chip, textvariable=self.metric_vars[key], background=c["surface_alt"],
-                foreground=c["accent"], font=_theme.FONT_NUM, anchor="center",
-                justify="center")
-            value_label.place(relx=0.5, y=chip_top, anchor="n")
-            caption_label = tk.Label(
-                chip, text=caption, background=c["surface_alt"], foreground=c["muted"],
-                font=_theme.FONT_SMALL, anchor="center", justify="center")
-            # 说明文字紧贴数字控件的实际请求高度摆放，避免 150% 下数字行高
-            # 比 font.metrics 估算值更大而造成 3~4px 重叠。
-            caption_top = chip_top + value_label.winfo_reqheight() + self._px(1)
-            caption_label.place(relx=0.5, y=caption_top, anchor="n")
-            chip.configure(height=caption_top + caption_label.winfo_reqheight()
-                           + self._px(2))
-            self.metric_chips[key] = {"frame": chip, "value": value_label,
+        metric_defs = (("files", "文件"), ("pages", "选取页"),
+                       ("sheets", "预计张数"), ("flips", "翻面次数"))
+        tk.Label(metrics, text="本批", background=c["header_bg"], foreground=c["muted"],
+                 font=_theme.FONT_SMALL).grid(row=0, column=0, padx=(0, self._px(GAP)))
+        for index, (key, caption) in enumerate(metric_defs, start=1):
+            group = tk.Frame(metrics, background=c["header_bg"])
+            group.grid(row=0, column=index, padx=(0, self._px(10)))
+            value_label = tk.Label(group, textvariable=self.metric_vars[key],
+                                   background=c["header_bg"], foreground=c["text"],
+                                   font=(_theme.FONT_FAMILY, 9, "bold"))
+            value_label.pack(side="left")
+            caption_label = tk.Label(group, text=caption, background=c["header_bg"],
+                                     foreground=c["muted"], font=_theme.FONT_SMALL)
+            caption_label.pack(side="left", padx=(self._px(3), 0))
+            self.metric_chips[key] = {"frame": group, "value": value_label,
                                       "caption": caption_label}
 
-        status_chip = tk.Frame(header, background=c["header_bg"], width=self._px(160))
-        status_chip.grid(row=0, column=3, rowspan=2, sticky="e",
-                         padx=(self._px(2), self._px(12)))
-        status_chip.grid_propagate(False)
-        self.printer_status_var = tk.StringVar(value="状态：未检测")
+        status = tk.Frame(header, background=c["header_bg"])
+        status.grid(row=0, column=3, rowspan=2, sticky="e",
+                    padx=(0, self._px(14)))
+        tk.Label(status, text="当前打印机", background=c["header_bg"],
+                 foreground=c["muted"], font=_theme.FONT_SMALL, anchor="e").pack(anchor="e")
+        self.printer_status_var = tk.StringVar(value="未检测")
         self.printer_status_label = tk.Label(
-            status_chip, textvariable=self.printer_status_var, background=c["header_bg"],
-            foreground=c["accent"], font=(_theme.FONT_FAMILY, 9), anchor="e")
-        self.printer_status_label.pack(anchor="e")
-        tk.Label(status_chip, text="手动双面打印", background=c["header_bg"],
-                 foreground=c["muted"], font=_theme.FONT_SMALL, anchor="e").pack(
-            anchor="e", pady=(self._px(GAP_S), 0))
+            status, textvariable=self.printer_status_var, background=c["header_bg"],
+            foreground=c["accent"], font=(_theme.FONT_FAMILY, 9, "bold"), anchor="e")
+        self.printer_status_label.pack(anchor="e", pady=(self._px(2), 0))
 
     def _layout_header_compact(self) -> None:
         """窗口较矮时收起标题副标题，把高度让给预览区（1024×720 仍然完整可见）。"""
@@ -571,8 +576,7 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
             self.header_frame.configure(height=self._header_compact_height)
         else:
             self.header_subtitle_label.grid()
-            self.header_subtitle_label.grid_configure(
-                pady=(self._px(2), self._px(10)))
+            self.header_subtitle_label.grid_configure(pady=(0, self._px(8)))
             self.header_frame.configure(height=self._header_full_height)
 
     def _update_flow_steps(self) -> None:
@@ -612,85 +616,67 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
 
     # ------------------------------------------------------------------ 主操作行
     def _build_action_row(self, parent: ttk.Frame, vertical: bool = False) -> None:
-        """开始打印/暂停/取消 + 状态与进度（两种布局共用同一套控件）。"""
+        """打印状态、阶段和进度在左，主要操作在右；分栏布局自动改为竖排。"""
         c = self.colors
         row = ttk.Frame(parent)
         row.pack(fill="x")
-
         if not vertical:
-            self.start_btn = ttk.Button(row, text="▶ 开始打印", width=12, style="Accent.TButton",
-                                        command=self.start_print)
-            self.start_btn.grid(row=0, column=0, sticky="w")
-            self.pause_btn = ttk.Button(row, text="暂停", width=6, style="TButton", state="disabled",
-                                        command=self.toggle_pause)
-            self.pause_btn.grid(row=0, column=1, sticky="w", padx=(self._px(GAP), 0))
-            self.stop_btn = ttk.Button(row, text="✕ 取消", width=6, style="Danger.TButton",
-                                       state="disabled", command=self.stop_print)
-            self.stop_btn.grid(row=0, column=2, sticky="w", padx=(self._px(GAP), 0))
-            info = ttk.Frame(row)
-            info.grid(row=0, column=3, sticky="ew", padx=(self._px(16), 0))
-            # info 必须吃掉整行剩余宽度，状态标签宽度才与自身文字长度脱钩；
-            # 否则省略逻辑按当前小宽度截断，文字越缩越短且无法恢复
-            row.columnconfigure(3, weight=1)
-            # 状态文字占弹性列；阶段徽标/进度条/页码列固定，长度变化不会推挤它们
-            info.columnconfigure(0, weight=1)
-            info.columnconfigure(3, minsize=self._px(84))
-            self.status_var = tk.StringVar(value="就绪")
-            self._status_full = "就绪"
-            self.status_label = tk.Label(info, text="", background=c["surface"],
-                                         foreground=c["accent"],
-                                         font=_theme.FONT_SUBTITLE, anchor="w")
-            self.status_label.grid(row=0, column=0, sticky="ew")
-            self.status_label.bind("<Configure>", lambda _e: self._render_status_text())
-            self.status_var.trace_add("write", self._on_status_change)
-            self._render_status_text()
-            phase_chip = tk.Frame(info, background=c["surface_alt"], width=self._px(112),
-                                  height=self._px(24), highlightthickness=1,
-                                  highlightbackground=c["border"])
-            phase_chip.grid(row=0, column=1, sticky="e", padx=(self._px(GAP), self._px(GAP)))
-            phase_chip.grid_propagate(False)
-            self.phase_var = tk.StringVar(value="待开始")
-            self.phase_label = tk.Label(phase_chip, textvariable=self.phase_var,
-                                        background=c["surface_alt"],
-                                        foreground=c["muted"], font=_theme.FONT_SMALL)
-            self.phase_label.place(relx=0.5, rely=0.5, anchor="center")
-            self.progress = ttk.Progressbar(info, mode="determinate", length=self._px(200),
-                                            maximum=100)
-            self.progress.grid(row=0, column=2, sticky="ew", padx=(0, self._px(12)))
-            self.current_page_var = tk.StringVar(value="")
-            tk.Label(info, textvariable=self.current_page_var, background=c["surface"],
-                     foreground=c["muted"], font=_theme.FONT_SMALL, anchor="e").grid(
-                row=0, column=3, sticky="e")
+            row.columnconfigure(0, weight=1)
+
+        info = ttk.Frame(row)
+        if vertical:
+            info.pack(fill="x", pady=(0, self._px(GAP)))
         else:
-            info = ttk.Frame(row)
-            info.pack(fill="x")
-            info.columnconfigure(0, weight=1)
-            self.status_var = tk.StringVar(value="就绪")
-            self._status_full = "就绪"
-            self.status_label = tk.Label(info, text="", background=c["surface"],
-                                         foreground=c["accent"],
-                                         font=_theme.FONT_SUBTITLE, anchor="w")
-            self.status_label.grid(row=0, column=0, sticky="ew")
-            self.status_label.bind("<Configure>", lambda _e: self._render_status_text())
-            self.status_var.trace_add("write", self._on_status_change)
-            self._render_status_text()
-            self.current_page_var = tk.StringVar(value="")
-            tk.Label(info, textvariable=self.current_page_var, background=c["surface"],
-                     foreground=c["muted"], font=_theme.FONT_SMALL, anchor="e").grid(
-                row=0, column=1, sticky="e")
-            self.progress = ttk.Progressbar(info, mode="determinate", maximum=100)
-            self.progress.grid(row=1, column=0, columnspan=2, sticky="ew",
-                               pady=(self._px(GAP_S), self._px(GAP)))
-            btn_row = ttk.Frame(row)
-            btn_row.pack(fill="x")
-            self.start_btn = ttk.Button(btn_row, text="▶ 开始打印", style="Accent.TButton",
-                                        command=self.start_print)
+            info.grid(row=0, column=0, sticky="ew", padx=(0, self._px(16)))
+        info.columnconfigure(1, weight=1)
+        info.columnconfigure(2, minsize=self._px(64))
+
+        phase_chip = tk.Frame(info, background=c["surface_alt"], width=self._px(126),
+                              height=self._px(24), highlightthickness=1,
+                              highlightbackground=c["border"])
+        phase_chip.grid(row=0, column=0, sticky="w", padx=(0, self._px(GAP)))
+        phase_chip.grid_propagate(False)
+        self.phase_var = tk.StringVar(value="待开始")
+        self.phase_label = tk.Label(phase_chip, textvariable=self.phase_var,
+                                    background=c["surface_alt"], foreground=c["muted"],
+                                    font=_theme.FONT_SMALL)
+        self.phase_label.place(relx=0.5, rely=0.5, anchor="center")
+
+        self.status_var = tk.StringVar(value="就绪，可以添加文件")
+        self._status_full = str(self.status_var.get())
+        self.status_label = tk.Label(info, text="", background=c["surface"],
+                                     foreground=c["accent"], font=_theme.FONT_SUBTITLE,
+                                     anchor="w")
+        self.status_label.grid(row=0, column=1, sticky="ew")
+        self.status_label.bind("<Configure>", lambda _e: self._render_status_text())
+        self.status_var.trace_add("write", self._on_status_change)
+        self.current_page_var = tk.StringVar(value="")
+        tk.Label(info, textvariable=self.current_page_var, background=c["surface"],
+                 foreground=c["muted"], font=_theme.FONT_SMALL, anchor="e").grid(
+            row=0, column=2, sticky="e", padx=(self._px(GAP), 0))
+        self.progress = ttk.Progressbar(info, mode="determinate", maximum=100)
+        self.progress.grid(row=1, column=0, columnspan=3, sticky="ew",
+                           pady=(self._px(GAP_S), 0))
+        self._render_status_text()
+
+        buttons = ttk.Frame(row)
+        if vertical:
+            buttons.pack(fill="x")
+        else:
+            buttons.grid(row=0, column=1, sticky="e")
+        self.start_btn = ttk.Button(buttons, text="开始打印", width=12,
+                                    style="Accent.TButton", command=self.start_print)
+        self.pause_btn = ttk.Button(buttons, text="暂停", width=6, state="disabled",
+                                    command=self.toggle_pause)
+        self.stop_btn = ttk.Button(buttons, text="取消任务", width=8, style="Danger.TButton",
+                                   state="disabled", command=self.stop_print)
+        if vertical:
             self.start_btn.pack(side="left", fill="x", expand=True)
-            self.pause_btn = ttk.Button(btn_row, text="暂停", width=6, style="TButton",
-                                        state="disabled", command=self.toggle_pause)
             self.pause_btn.pack(side="left", padx=(self._px(GAP), 0))
-            self.stop_btn = ttk.Button(btn_row, text="✕ 取消", width=6, style="Danger.TButton",
-                                       state="disabled", command=self.stop_print)
+            self.stop_btn.pack(side="left", padx=(self._px(GAP), 0))
+        else:
+            self.start_btn.pack(side="left")
+            self.pause_btn.pack(side="left", padx=(self._px(GAP), 0))
             self.stop_btn.pack(side="left", padx=(self._px(GAP), 0))
 
     def _on_status_change(self, *_args) -> None:
@@ -776,13 +762,19 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         """显式焦点链：Tab 顺序与视觉顺序一致（文件区 → 预览 → 设置 → 操作）。"""
         order = [
             getattr(self, "add_file_btn", None), getattr(self, "add_dir_btn", None),
-            getattr(self, "remove_btn", None), getattr(self, "up_btn", None),
-            getattr(self, "down_btn", None), getattr(self, "dedupe_btn", None),
-            getattr(self, "explore_btn", None), getattr(self, "clear_btn", None),
-            getattr(self, "recent_combo", None),
+            getattr(self, "remove_btn", None), getattr(self, "more_btn", None),
+            getattr(self, "clear_btn", None), getattr(self, "tree", None),
+            getattr(self, "sel_range_btn", None), getattr(self, "sel_copies_btn", None),
+            getattr(self, "sel_restore_btn", None), getattr(self, "sel_apply_all_btn", None),
+            getattr(self, "recent_combo", None), getattr(self, "recent_add_btn", None),
+            getattr(self, "recent_clear_btn", None),
+            getattr(self, "preview_single_radio", None),
+            getattr(self, "preview_spread_radio", None),
+            getattr(self, "preview_refresh_btn", None),
             getattr(self, "preview_page_spin", None), getattr(self, "preview_prev_btn", None),
             getattr(self, "preview_next_btn", None), getattr(self, "scale_mode_combo", None),
-            getattr(self, "scale_percent_spin", None), getattr(self, "preview_refresh_btn", None),
+            getattr(self, "scale_percent_spin", None), getattr(self, "nup_quick_combo", None),
+            getattr(self, "orientation_combo", None),
             getattr(self, "printer_combo", None), getattr(self, "refresh_btn", None),
             getattr(self, "copies_spin", None), getattr(self, "range_mode_combo", None),
             getattr(self, "range_entry", None),
@@ -802,9 +794,19 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         self.root.bind("<Shift-Tab>", lambda _e: self._cycle_focus(-1))
 
     def _cycle_focus(self, step: int):
-        order = [w for w in getattr(self, "_focus_order", [])
-                 if w.winfo_exists() and w.winfo_ismapped()
-                 and str(w.cget("state")) != "disabled"]
+        order = []
+        for widget in getattr(self, "_focus_order", []):
+            try:
+                if not widget.winfo_exists() or not widget.winfo_ismapped():
+                    continue
+                try:
+                    disabled = str(widget.cget("state")) == "disabled"
+                except tk.TclError:
+                    disabled = False
+                if not disabled:
+                    order.append(widget)
+            except tk.TclError:
+                continue
         if not order:
             return None
         try:
@@ -856,10 +858,18 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         dialog.resizable(False, False)
         dialog.configure(background=self.colors["bg"])
 
-        body = ttk.Frame(dialog, padding=16, style="Card.TFrame")
-        body.pack(fill="both", expand=True, padx=12, pady=12)
+        header = ttk.Frame(dialog, style="Header.TFrame",
+                           padding=(self._px(20), self._px(14)))
+        header.pack(fill="x")
+        ttk.Label(header, text="页面设置", style="HeaderTitle.TLabel").pack(anchor="w")
+        ttk.Label(header, text="设置纸张、来源、方向与排版留白。",
+                  style="HeaderMuted.TLabel").pack(anchor="w", pady=(self._px(GAP_S), 0))
+        ttk.Separator(dialog, orient="horizontal", style="Line.TSeparator").pack(fill="x")
 
-        ttk.Label(body, text="纸张", style="Subtitle.TLabel").grid(
+        body = ttk.Frame(dialog, padding=(self._px(20), self._px(16)))
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(body, text="纸张与来源", style="Subtitle.TLabel").grid(
             row=0, column=0, columnspan=4, sticky="w")
         ttk.Label(body, text="纸张大小：").grid(row=1, column=0, sticky="w", pady=(8, 4))
         paper_var = tk.StringVar(value=str(self.vars["paper_name"].get()))
@@ -893,7 +903,7 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         ttk.Label(body, text="页边距（毫米）", style="Subtitle.TLabel").grid(
             row=4, column=0, columnspan=4, sticky="w", pady=(12, 4))
         margin_vars = {}
-        margin_labels = (("margin_left_mm", "上"), ("margin_top_mm", "左"),
+        margin_labels = (("margin_left_mm", "左"), ("margin_top_mm", "上"),
                          ("margin_right_mm", "右"), ("margin_bottom_mm", "下"))
         for index, (key, label) in enumerate(margin_labels):
             margin_vars[key] = tk.StringVar(value=str(self.vars[key].get()))
@@ -902,8 +912,9 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
             ttk.Entry(body, textvariable=margin_vars[key], width=8).grid(
                 row=5 + index // 2, column=(index % 2) * 2 + 1, sticky="w", padx=(0, 16), pady=3)
 
-        hint = ttk.Label(body, text="边距由本工具排版时留白；纸张/来源/方向通过 DEVMODE 交给驱动。",
-                         style="Muted.TLabel")
+        hint = ttk.Label(
+            body, text="边距用于排版留白；纸张、来源与方向由打印机驱动执行。",
+            style="Muted.TLabel", wraplength=self._px(480), justify="left")
         hint.grid(row=7, column=0, columnspan=4, sticky="w", pady=(10, 0))
 
         def apply() -> None:
@@ -937,10 +948,13 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
             self._sync_widgets()
             self._save_settings_now()
 
-        buttons = ttk.Frame(body)
-        buttons.grid(row=8, column=0, columnspan=4, sticky="e", pady=(14, 0))
-        ttk.Button(buttons, text="确定", style="Accent.TButton", command=apply).pack(side="left")
-        ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side="left", padx=(8, 0))
+        buttons = ttk.Frame(dialog, style="Toolbar.TFrame",
+                            padding=(self._px(16), self._px(10)))
+        buttons.pack(fill="x", side="bottom")
+        ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="应用设置", style="Accent.TButton", command=apply).pack(
+            side="right", padx=(0, self._px(GAP)))
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
 
         dialog.update_idletasks()
         self._place_toplevel_over_root(dialog, dialog.winfo_reqwidth(),

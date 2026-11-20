@@ -9,7 +9,8 @@ from core_utils import PdfError
 from pdf_layout import (
     LayoutOptions, append_blank_page_like, build_layout_plan, build_range_pdf,
     compute_duplex_orders, compute_merged_duplex_orders, compute_merged_per_copy_orders,
-    compute_print_orders, compute_single_sided_orders, merged_side_ranges,
+    compute_print_orders, compute_single_sided_orders, content_side_numbers,
+    merged_side_ranges,
     merged_sheet_count, nup_grid, paper_size_pt, plan_batch_summary,
     plan_booklet_sides, plan_nup_sides, resolve_range_pages,
 )
@@ -242,3 +243,29 @@ class TestRealPdf:
             doc.close()
         with pytest.raises(PdfError):
             build_range_pdf(str(tmp_path / "enc2.pdf"), [1], str(tmp_path / "o.pdf"))
+
+
+# ------------------------------------------------------------- 内容面识别（单页免双面）
+class TestContentSideNumbers:
+    """只有 1 面内容时不应再走翻面流程；补页/空槽位不算内容。"""
+
+    def test_single_page_duplex_has_one_content_side(self):
+        plan = build_layout_plan(1, LayoutOptions(manual_duplex=True))
+        assert plan.output_count == 2          # 仍补配对空白页，保持整批偶数不变量
+        assert content_side_numbers(plan) == [1]
+
+    def test_three_pages_all_content_sides(self):
+        plan = build_layout_plan(3, LayoutOptions(manual_duplex=True))
+        assert content_side_numbers(plan) == [1, 2, 3]
+
+    def test_nup_single_output_side(self):
+        plan = build_layout_plan(2, LayoutOptions(manual_duplex=True, nup=2))
+        assert content_side_numbers(plan) == [1]
+
+    def test_booklet_single_page(self):
+        plan = build_layout_plan(1, LayoutOptions(manual_duplex=True, booklet=True))
+        assert content_side_numbers(plan) == [1]
+
+    def test_single_sided_plan_unaffected(self):
+        plan = build_layout_plan(2, LayoutOptions(manual_duplex=False))
+        assert content_side_numbers(plan) == [1, 2]

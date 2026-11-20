@@ -794,6 +794,19 @@ def build_layout_plan(
     )
 
 
+def content_side_numbers(plan: LayoutPlan) -> List[int]:
+    """返回含有真实源页的输出面编号（1 基）。
+
+    双面/N-up 补页（rel > total_selected）与空槽位（None）都不算内容。
+    用于识别“只有 1 面内容”的场景：此时无需翻面，也不应打印空白配对面。
+    """
+    result = []
+    for side_no, entries in enumerate(plan.sides, start=1):
+        if any(rel is not None and rel <= plan.total_selected for rel in entries):
+            result.append(side_no)
+    return result
+
+
 def describe_plan(plan: LayoutPlan) -> str:
     """生成适合写入日志的版式说明。"""
     parts = [f"选取 {plan.total_selected} 页"]

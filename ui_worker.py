@@ -33,7 +33,8 @@ from word_convert import (
 from pdf_layout import (
     CUSTOM_PAPER_NAME, NUP_CHOICES, PAPER_SIZES_MM, LayoutOptions, build_layout_plan,
     compose_layout_pdf, compute_duplex_orders, compute_merged_duplex_orders,
-    compute_merged_per_copy_orders, compute_single_sided_orders, describe_plan,
+    compute_merged_per_copy_orders, compute_single_sided_orders, content_side_numbers,
+    describe_plan,
     get_pdf_page_count, merge_layout_pdfs, merged_side_ranges, merged_sheet_count,
     plan_batch_summary, preview_metrics, resolve_range_pages,
 )
@@ -698,6 +699,17 @@ class WorkerMixin:
             raise PdfError("合并任务页数与预期不一致，请重试。")
         ranges = merged_side_ranges(counts)
 
+        if sum(len(content_side_numbers(item["plan"])) for item in prepared) == 1:
+            # 整批只有 1 面内容（典型：单个文件只有 1 页）：无需翻面，
+            # 也不打印双面配对补出的空白反面，直接按单面输出。
+            order = compute_single_sided_orders(1, snapshot["copies"])
+            self._post(("rows", [(item["job"]["iid"], "单面打印") for item in prepared]))
+            self._post(("log", "整批仅 1 个输出面有内容，按单面打印，无需翻面。"))
+            self._print_phase(merged_path, order, "PDF 单面打印", snapshot,
+                              "单面打印 · 仅 1 页内容，无需翻面")
+            self._post(("log", f"单面打印完成：1 个输出面 × {snapshot['copies']} 份。"))
+            return
+
         self._post(("log", (
             f"整批打印：{len(prepared)} 个文件合并为 {total} 个输出面（{sheets} 张纸），"
             f"预计翻面 {1 if not (snapshot['copies'] > 1 and snapshot['copy_exec_on']) else snapshot['copies']} 次。")))
@@ -805,29 +817,40 @@ class WorkerMixin:
         for index, item in enumerate(prepared, start=1):
             self._raise_if_stopped()
             job = item["job"]
-            sheets = item["sides"] // 2
+            single_side = content_side_numbers(item["plan"]) == [1]
+            sheets = 1 if single_side else item["sides"] // 2
             fronts, backs = compute_duplex_orders(
                 item["sides"], snapshot["copies"], snapshot["collate"],
                 snapshot["reverse"])
-            self._post(("rows", [(job["iid"], "第1面")]))
-            self._post(("log", f"《{job['name']}》逐文件阶段一：正面。"))
-            self._post(("status", f"逐文件 {index}/{total_files} · 第一面（正面）· "
-                                  f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张"))
-            self._print_phase(item["path"], fronts, f"PDF {job['name']} 正面",
-                              snapshot, f"逐文件 {index}/{total_files} · 第一面（正面）· "
-                                        f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
-            self._raise_if_stopped()
-            if backs:
-                self._post(("rows", [(job["iid"], "等待翻面")]))
-                if not self._ask_flip_file(job, item["sides"], backs, index, total_files):
-                    raise CancelledByUser("用户在翻面提示中选择取消。")
-            self._post(("rows", [(job["iid"], "第2面")]))
-            self._post(("log", f"《{job['name']}》逐文件阶段二：反面（逆序）。"))
-            self._post(("status", f"逐文件 {index}/{total_files} · 第二面（反面）· "
-                                  f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张"))
-            self._print_phase(item["path"], backs, f"PDF {job['name']} 反面",
-                              snapshot, f"逐文件 {index}/{total_files} · 第二面（反面）· "
-                                        f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
+            if single_side:
+                # 仅 1 面内容：fronts 即第 1 面 × 份数，跳过翻面与空白反面
+                self._post(("rows", [(job["iid"], "单面打印")]))
+                self._post(("log", f"《{job['name']}》仅 1 页内容，按单面打印，无需翻面。"))
+                phase = (f"逐文件 {index}/{total_files} · 单面打印 · "
+                         f"《{job['name']}》 · 本文件 1 张 · 已完成 {done_sheets} 张")
+                self._post(("status", phase))
+                self._print_phase(item["path"], fronts, f"PDF {job['name']} 单面",
+                                  snapshot, phase)
+            else:
+                self._post(("rows", [(job["iid"], "第1面")]))
+                self._post(("log", f"《{job['name']}》逐文件阶段一：正面。"))
+                self._post(("status", f"逐文件 {index}/{total_files} · 第一面（正面）· "
+                                      f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张"))
+                self._print_phase(item["path"], fronts, f"PDF {job['name']} 正面",
+                                  snapshot, f"逐文件 {index}/{total_files} · 第一面（正面）· "
+                                            f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
+                self._raise_if_stopped()
+                if backs:
+                    self._post(("rows", [(job["iid"], "等待翻面")]))
+                    if not self._ask_flip_file(job, item["sides"], backs, index, total_files):
+                        raise CancelledByUser("用户在翻面提示中选择取消。")
+                self._post(("rows", [(job["iid"], "第2面")]))
+                self._post(("log", f"《{job['name']}》逐文件阶段二：反面（逆序）。"))
+                self._post(("status", f"逐文件 {index}/{total_files} · 第二面（反面）· "
+                                      f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张"))
+                self._print_phase(item["path"], backs, f"PDF {job['name']} 反面",
+                                  snapshot, f"逐文件 {index}/{total_files} · 第二面（反面）· "
+                                            f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
             self._post(("rows", [(job["iid"], "已完成")]))
             done_sheets += sheets
             remaining = total_files - index
@@ -836,7 +859,7 @@ class WorkerMixin:
             next_name = (prepared[index]["job"]["name"] if remaining else "")
             action = self._ui_call(lambda: self._file_done_modal(
                 job, index, total_files, item["sides"], next_name,
-                mode="by_file", final=(remaining == 0)))
+                mode="by_file", final=(remaining == 0), single_sided=single_side))
             if action == "cancel":
                 raise CancelledByUser("用户在取纸提示中选择取消。")
 
@@ -844,7 +867,8 @@ class WorkerMixin:
                          next_name: str, *, mode: str = "by_file",
                          final: bool = False,
                          group_done: Optional[int] = None,
-                         group_total: Optional[int] = None) -> str:
+                         group_total: Optional[int] = None,
+                         single_sided: bool = False) -> str:
         """取纸确认框：返回 continue / cancel。
 
         - mode=by_file：逐文件反面打印完，取出后打印下一个；最后一个文件
@@ -855,7 +879,7 @@ class WorkerMixin:
         关闭窗口或按 Esc 一律按 cancel 处理（未确认不得继续下一个阶段）。
         """
         result = {"action": "cancel"}
-        sheets = sides // 2
+        sheets = 1 if single_sided else sides // 2
         if mode == "batch":
             title = f"该文件已打完，请取出这 {sheets} 张纸"
             next_line = f"下一个：{next_name} 的反面（同一叠纸继续打印）"
@@ -880,11 +904,18 @@ class WorkerMixin:
             else:
                 progress_line = (f"进度：已完成 {done}/{total} 个文件，"
                                  f"剩余 {max(0, total - done)} 个")
+            if single_sided:
+                stage_line = "阶段：单面打印已完成 · 本文件 1 张纸（1 个输出面）"
+                sample_line = "仅 1 页内容，无需翻面。"
+            else:
+                stage_line = (f"阶段：第二面（反面）已完成 · 本文件 {sheets} 张纸"
+                              f"（{sides} 个输出面）")
+                sample_line = "示例页序：" + self._duplex_sample_text(sides)
             info = [
                 f"文件：《{job['name']}》（第 {done}/{total} 个文件）",
-                f"阶段：第二面（反面）已完成 · 本文件 {sheets} 张纸（{sides} 个输出面）",
+                stage_line,
                 progress_line,
-                "示例页序：" + self._duplex_sample_text(sides),
+                sample_line,
             ]
             if next_line:
                 info.append(next_line)

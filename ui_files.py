@@ -294,10 +294,14 @@ class FilesPanelMixin:
             return
         try:
             compact = self.root.winfo_height() < self._px(820)
+            workspace_height = self.workspace.winfo_height()
         except tk.TclError:
             return
         self._file_panel_compact = compact
         short_split = compact and self.layout_scheme == "split"
+        short_stacked = (self.layout_scheme == "stacked"
+                         and 1 < workspace_height < self._px(260))
+        short_panel = short_split or short_stacked
         if compact:
             self.scope_hint_label.grid_remove()
             self.sel_info_label.grid_remove()
@@ -305,7 +309,7 @@ class FilesPanelMixin:
             if self.scope_hint_var.get().strip():
                 self.scope_hint_label.grid()
             self.sel_info_label.grid()
-        if short_split:
+        if short_panel:
             self.recent_frame.grid_remove()
             self.empty_icon.pack_forget()
             self.empty_detail_label.pack_forget()

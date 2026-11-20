@@ -6,6 +6,7 @@ import queue
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -130,6 +131,61 @@ def test_resize_preserves_selection_text_and_button_spacing(tmp_path, monkeypatc
                 assert app.sel_info_label.winfo_ismapped()
                 assert app.sel_info_label.grid_info()["columnspan"] == len(app.sel_buttons) + 1
                 assert app.sel_info_label.winfo_width() >= font.measure(text)
+    finally:
+        app.shutting_down = True
+        root.destroy()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
+@pytest.mark.parametrize("scheme", ("stacked", "split"))
+@pytest.mark.parametrize("ui_scale", (1.0, 1.5))
+def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, ui_scale):
+    from ui_main import DuplexPrintApp, _create_root
+
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    root = _create_root()
+    root.withdraw()
+    root.tk.call("tk", "scaling", 1.3333 * ui_scale)
+    app = DuplexPrintApp(root, layout_scheme=scheme, ui_scale_override=ui_scale)
+    app.preview_enabled = False
+    for attr in ("preview_after_id", "ui_poll_id", "printer_poll_id"):
+        poll_id = getattr(app, attr, None)
+        if poll_id is not None:
+            root.after_cancel(poll_id)
+            setattr(app, attr, None)
+    root.attributes("-alpha", 0.0)
+    root.deiconify()
+    try:
+        root.geometry(f"{round(1024 * ui_scale)}x{round(720 * ui_scale)}+40+40")
+        root.update()
+        assert app.duplex_mode_var.get() == "duplex"
+        assert app.vars["manual_duplex"].get() is True
+
+        app._on_log_sash_press(SimpleNamespace(y_root=600))
+        app._on_log_sash_drag(SimpleNamespace(y_root=-1000))
+        root.update()
+
+        assert app._log_height > app._log_min_height
+        assert app._log_height <= root.winfo_height() // 3
+        tree_area = app.tree.master
+        assert tree_area.winfo_height() >= app._px(54)
+        assert app.preview_canvas.winfo_height() >= app._px(48)
+        for child in (tree_area, app.preview_canvas):
+            parent_bottom = child.master.winfo_rooty() + child.master.winfo_height()
+            assert child.winfo_rooty() + child.winfo_height() <= parent_bottom
+        assert app.preview_frame.winfo_rooty() + app.preview_frame.winfo_height() <= \
+            app.workspace.winfo_rooty() + app.workspace.winfo_height()
+        if scheme == "stacked":
+            assert not app.recent_frame.winfo_ismapped()
+
+        app._on_log_sash_press(SimpleNamespace(y_root=100))
+        app._on_log_sash_drag(SimpleNamespace(y_root=1200))
+        root.update()
+        assert app._log_height == app._log_min_height
+        if scheme == "stacked":
+            assert app.recent_frame.winfo_ismapped()
+        assert app.preview_frame.winfo_rooty() + app.preview_frame.winfo_height() <= \
+            app.workspace.winfo_rooty() + app.workspace.winfo_height()
     finally:
         app.shutting_down = True
         root.destroy()

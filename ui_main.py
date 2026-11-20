@@ -356,6 +356,7 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         self.workspace.grid(row=1, column=0, sticky="nsew", pady=(self._px(GAP), 0))
         self.workspace.columnconfigure(0, weight=1)
         self.workspace.rowconfigure(0, weight=1)
+        self.workspace.bind("<Configure>", self._on_workspace_configure)
         if self.layout_scheme == "split":
             self._build_workspace_split()
         else:
@@ -465,20 +466,40 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         self._resize_log_for_window()
         self._schedule_live_refresh()
 
+    def _on_workspace_configure(self, event) -> None:
+        if getattr(event, "widget", None) is not self.workspace:
+            return
+        self._sync_file_panel_density()
+        self._sync_workspace_density()
+
     def _sync_workspace_density(self) -> None:
-        if self.layout_scheme != "split" or not hasattr(self, "_split_left"):
+        if not hasattr(self, "preview_frame"):
             return
         try:
             compact = self.root.winfo_height() < self._px(820)
+            workspace_height = self.workspace.winfo_height()
         except tk.TclError:
             return
-        if compact:
-            self._split_left.rowconfigure(0, weight=1, minsize=self._px(210))
-            self._split_left.rowconfigure(1, weight=1, minsize=self._px(250))
-        else:
-            self._split_left.rowconfigure(0, weight=3, minsize=self._px(200))
-            self._split_left.rowconfigure(1, weight=4, minsize=self._px(240))
-        self.preview_frame.rowconfigure(2, minsize=self._px(120 if compact else 180))
+        preview_budget = workspace_height
+        if self.layout_scheme == "split" and hasattr(self, "_split_left"):
+            if compact:
+                top_base, bottom_base = self._px(210), self._px(250)
+                top_weight = bottom_weight = 1
+            else:
+                top_base, bottom_base = self._px(200), self._px(240)
+                top_weight, bottom_weight = 3, 4
+            available = max(0, workspace_height - self._px(GAP_CARD))
+            top_min = min(top_base, available)
+            bottom_min = min(bottom_base, max(0, available - top_min))
+            self._split_left.rowconfigure(0, weight=top_weight, minsize=top_min)
+            self._split_left.rowconfigure(1, weight=bottom_weight, minsize=bottom_min)
+            preview_budget = bottom_min
+        canvas_min = self._px(120 if compact else 180)
+        if workspace_height > 1:
+            # 日志增高后窗口本身没变，最小画布也必须随实际工作区降级。
+            canvas_min = max(self._px(48), min(
+                canvas_min, preview_budget - self._px(128)))
+        self.preview_frame.rowconfigure(2, minsize=canvas_min)
 
     def _build_header(self, parent: tk.Frame) -> None:
         """精简应用栏：产品、真实任务步骤、批次摘要和打印机状态。"""

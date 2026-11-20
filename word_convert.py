@@ -1099,6 +1099,13 @@ def _remove_quietly(path: str) -> None:
 def _main(argv=None) -> int:
     import argparse
 
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None:
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except (AttributeError, OSError, ValueError):
+                pass
+
     parser = argparse.ArgumentParser(description="Word/WPS 转 PDF（子进程入口）")
     parser.add_argument("--src")
     parser.add_argument("--dst")

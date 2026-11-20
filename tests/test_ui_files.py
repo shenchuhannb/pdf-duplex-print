@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """文件转换队列回归。"""
 
+import os
 import queue
 import tempfile
 import threading
 import time
+
+import pytest
 
 import ui_files
 
@@ -74,3 +77,59 @@ def test_file_added_during_conversion_is_processed(tmp_path, monkeypatch):
     assert converted == [str(first), str(second)]
     assert completed == {"first", "second"}
     assert pumps == 2
+
+
+@pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
+@pytest.mark.parametrize("scheme", ("stacked", "split"))
+def test_resize_preserves_selection_text_and_button_spacing(tmp_path, monkeypatch, scheme):
+    import tkinter.font as tkfont
+
+    from ui_main import DuplexPrintApp, _create_root
+
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    root = _create_root()
+    root.withdraw()
+    root.tk.call("tk", "scaling", 1.3333)
+    app = DuplexPrintApp(root, layout_scheme=scheme, ui_scale_override=1.0)
+    app.preview_enabled = False
+    for attr in ("preview_after_id", "ui_poll_id", "printer_poll_id"):
+        poll_id = getattr(app, attr, None)
+        if poll_id is not None:
+            root.after_cancel(poll_id)
+            setattr(app, attr, None)
+    root.attributes("-alpha", 0.0)
+    root.deiconify()
+    try:
+        for width, height in ((1024, 720), (1440, 720), (1024, 1100), (1440, 1100)):
+            root.geometry(f"{width}x{height}+40+40")
+            root.update()
+            app._sync_file_panel_density()
+            app._on_file_panel_configure()
+            app._on_sel_bar_configure()
+            app._on_preview_frame_configure()
+            root.update()
+
+            assert int(app.scope_hint_label.cget("wraplength")) == app.tab_files.winfo_width()
+            assert int(app.preview_info_label.cget("wraplength")) == \
+                app.preview_frame.winfo_width()
+            assert int(app.sel_bar.grid_columnconfigure(0, "weight")) == 0
+            assert int(app.sel_bar.grid_columnconfigure(len(app.sel_buttons), "weight")) == 1
+
+            positions = [(button.winfo_x(), button.winfo_y(), button.winfo_width())
+                         for button in app.sel_buttons]
+            for left, right in zip(positions, positions[1:]):
+                if left[1] == right[1]:
+                    assert right[0] - left[0] - left[2] == app._px(ui_files.GAP_S)
+            for button in app.sel_buttons:
+                assert button.winfo_x() >= 0
+                assert button.winfo_x() + button.winfo_width() <= app.sel_bar.winfo_width()
+
+            if height == 1100:
+                text = "选择文件后可单独设置范围与份数"
+                font = tkfont.Font(root=root, font=app.sel_info_label.cget("font"))
+                assert app.sel_info_label.winfo_ismapped()
+                assert app.sel_info_label.grid_info()["columnspan"] == len(app.sel_buttons) + 1
+                assert app.sel_info_label.winfo_width() >= font.measure(text)
+    finally:
+        app.shutting_down = True
+        root.destroy()

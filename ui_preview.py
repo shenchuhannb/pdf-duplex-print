@@ -88,6 +88,9 @@ _logger = logging.getLogger("pdf_duplex")
 class PreviewMixin:
     def _on_preview_frame_configure(self, event=None) -> None:
         width = event.width if event is not None else self.preview_frame.winfo_width()
+        if hasattr(self, "preview_info_label") and width > 1:
+            if int(self.preview_info_label.cget("wraplength")) != width:
+                self.preview_info_label.configure(wraplength=width)
         self._layout_preview_tool(width)
 
     def _layout_preview_tool(self, width: int) -> None:

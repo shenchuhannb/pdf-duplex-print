@@ -111,7 +111,7 @@ class FilesPanelMixin:
         self.scope_hint_label = ttk.Label(
             frame, textvariable=self.scope_hint_var, style="Muted.TLabel",
             anchor="w", wraplength=self._px(400), justify="left")
-        self.scope_hint_label.grid(row=1, column=0, sticky="w", pady=(self._px(2), 0))
+        self.scope_hint_label.grid(row=1, column=0, sticky="ew", pady=(self._px(2), 0))
         self.scope_hint_label.grid_remove()
 
         # 操作条：单行排列（1024 宽下列表卡约 443px，8 个按钮一行放不下，
@@ -238,11 +238,10 @@ class FilesPanelMixin:
         sel_bar = ttk.Frame(frame, style="Toolbar.TFrame",
                             padding=(self._px(GAP), self._px(GAP_S)))
         sel_bar.grid(row=4, column=0, sticky="ew", pady=(self._px(GAP), 0))
-        sel_bar.columnconfigure(0, weight=1)
         self.sel_info_var = tk.StringVar(value="选择文件后可单独设置范围与份数")
-        self.sel_info_label = ttk.Label(sel_bar, textvariable=self.sel_info_var,
-                                        style="ToolbarMuted.TLabel", anchor="w")
-        self.sel_info_label.grid(row=0, column=0, sticky="ew")
+        self.sel_info_label = ttk.Label(
+            sel_bar, textvariable=self.sel_info_var, style="ToolbarMuted.TLabel",
+            anchor="w", justify="left", wraplength=self._px(400))
         self.sel_range_btn = ttk.Button(
             sel_bar, text="设置范围…", command=lambda: self.edit_selected_scope("range"))
         self.sel_copies_btn = ttk.Button(
@@ -253,6 +252,9 @@ class FilesPanelMixin:
             sel_bar, text="应用到全部文件", command=self.apply_selected_scope_to_all)
         self.sel_buttons = [self.sel_range_btn, self.sel_copies_btn,
                             self.sel_restore_btn, self.sel_apply_all_btn]
+        sel_bar.columnconfigure(len(self.sel_buttons), weight=1)
+        self.sel_info_label.grid(
+            row=0, column=0, columnspan=len(self.sel_buttons) + 1, sticky="ew")
         for index, button in enumerate(self.sel_buttons):
             button.grid(row=1, column=index, sticky="w",
                         padx=(0, self._px(GAP_S)), pady=(self._px(GAP_S), 0))
@@ -260,6 +262,7 @@ class FilesPanelMixin:
         # 避免最左侧按钮被压成半截（不依赖固定像素宽度估算）。
         self.sel_bar = sel_bar
         sel_bar.bind("<Configure>", self._on_sel_bar_configure)
+        frame.bind("<Configure>", self._on_file_panel_configure, add="+")
         self._update_selection_bar()
 
         # 最近使用：单行紧凑布局（下拉吸收剩余宽度，不挤压右侧按钮）
@@ -277,6 +280,14 @@ class FilesPanelMixin:
         self.recent_clear_btn = ttk.Button(recent, text="清除记录", style="Ghost.TButton",
                                            command=self._clear_recent)
         self.recent_clear_btn.grid(row=0, column=3)
+
+    def _on_file_panel_configure(self, event=None) -> None:
+        width = int(event.width) if event is not None else self.tab_files.winfo_width()
+        if width <= 1:
+            return
+        for label in (self.scope_hint_label, self.empty_hint_label):
+            if int(label.cget("wraplength")) != width:
+                label.configure(wraplength=width)
 
     def _sync_file_panel_density(self) -> None:
         if not hasattr(self, "sel_bar"):
@@ -317,9 +328,12 @@ class FilesPanelMixin:
         if width <= 1:
             return
         gap = self._px(GAP_S)
+        inner_width = max(1, width - self._px(GAP) * 2)
+        if int(self.sel_info_label.cget("wraplength")) != inner_width:
+            self.sel_info_label.configure(wraplength=inner_width)
         required = sum(button.winfo_reqwidth() for button in self.sel_buttons) \
             + gap * max(0, len(self.sel_buttons) - 1)
-        per_row = len(self.sel_buttons) if required <= width else 2
+        per_row = len(self.sel_buttons) if required <= inner_width else 2
         compact = bool(getattr(self, "_file_panel_compact", False))
         key = (per_row, width, compact)
         if getattr(self, "_sel_layout_key", None) == key:

@@ -741,6 +741,14 @@ class FilesPanelMixin:
         self.word_thread.start()
 
     def _word_worker(self) -> None:
+        try:
+            self._word_worker_once()
+        finally:
+            self.word_thread = None
+        if not (self.shutting_down or self.stop_event.is_set()):
+            self.ui_queue.put(("pump_word",))
+
+    def _word_worker_once(self) -> None:
         """串行把 Word/WPS/图片转成临时 PDF；COM 在子进程里执行，界面不冻结。"""
         jobs = [f for f in list(self.files)
                 if f.get("kind") in ("word", "wps", "image") and not f.get("pdf_path")

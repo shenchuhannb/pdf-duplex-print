@@ -390,7 +390,7 @@ def _font_table_names(xml: str):
 
 
 def _docx_font_names(path: str):
-    """从 .docx 的 zip 中收集文档引用的字体名，返回 ``(字体集合, 是否有可判源)``。
+    """从 .docx 的 zip 中收集正文/样式实际引用的字体名。
 
     ``有可判源`` 指确实读到了 rFonts 或 fontTable：只有在这种情况下
     “没有缺失”才是可靠结论；纯空文档仍按“未能预检”。
@@ -411,8 +411,8 @@ def _docx_font_names(path: str):
     for part in ("word/document.xml", "word/styles.xml"):
         found, _has_tags = _fonts_from_rfonts(parts.get(part, ""), theme_xml)
         names |= found
-    table_names, has_table = _font_table_names(parts.get("word/fontTable.xml", ""))
-    names |= table_names
+    # Word 的 fontTable 常保留未使用字体，条目本身不能作为缺失依据。
+    has_table = _font_table_names(parts.get("word/fontTable.xml", ""))[1]
     looked = bool(names) or has_table
     return names, looked
 

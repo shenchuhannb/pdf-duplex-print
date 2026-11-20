@@ -5,9 +5,8 @@ import pytest
 
 from core_utils import (
     PdfError, format_page_list, is_pdf_path, is_word_path, is_wps_path,
-    mm_to_pt, parse_page_range, pt_to_mm, split_drop_data,
+    mm_to_pt, parse_page_range, pt_to_mm, split_conversion_records, split_drop_data,
 )
-from ui_worker import split_conversion_records
 
 
 class TestParsePageRange:

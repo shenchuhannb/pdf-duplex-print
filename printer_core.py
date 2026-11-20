@@ -572,16 +572,18 @@ def validate_printer_connection(
 
     host-based 驱动（如 HP P1007）在设备脱机或端口异常时，CreateDC/
     DocumentProperties 可能长时间阻塞甚至挂起，且这些阻塞调用无法被中断。
-    因此整个探测放在守护线程中执行并设置超时：超时直接抛出可读错误，
-    打印工作线程不会被驱动永久楔死（卡住的探测线程为 daemon，不阻塞退出）。
+    因此整个探测（含队列预检——OpenPrinter/GetPrinter 同为 spooler RPC，
+    spooler 卡死时一样会无限阻塞）放在守护线程中执行并设置超时：超时直接
+    抛出可读错误，打印工作线程不会被驱动永久楔死（卡住的探测线程为
+    daemon，不阻塞退出）。
     """
-    check_printer_ready(printer_name)
-
+    printer_name = str(printer_name or "").strip()
     probe_error: List[BaseException] = []
 
     def _probe() -> None:
         hdc = None
         try:
+            check_printer_ready(printer_name)
             hdc, _devmode_buffer = _create_printer_dc(printer_name, options)
             if (int(_gdi32.GetDeviceCaps(hdc, HORZRES)) <= 0
                     or int(_gdi32.GetDeviceCaps(hdc, VERTRES)) <= 0):
@@ -668,6 +670,7 @@ def wait_for_print_job(
     open_failures = 0
     get_job_failures = 0
     job_observed = False
+    poll_delayed = False
     last_printer_status_check = 0.0
     while True:
         if stop_event.is_set():
@@ -691,6 +694,7 @@ def wait_for_print_job(
             # 避免偶发 OpenPrinter 失败把整批判为“无法连接队列”。
             open_failures += 1
             if open_failures < OPEN_PRINTER_RETRY_ATTEMPTS and not stop_event.is_set():
+                poll_delayed = True
                 time.sleep(RETRY_BACKOFF_SECONDS * open_failures)
                 continue
             raise PrintError(f"无法连接打印队列：{printer_name}\n{exc}") from exc
@@ -729,6 +733,15 @@ def wait_for_print_job(
                     if job_observed:
                         _logger.info(
                             "打印任务已从队列消失：printer=%s job_id=%s failures=%d",
+                            printer_name, job_id, get_job_failures)
+                        return True
+                    if poll_delayed:
+                        # OpenPrinter 重试推迟了首次 GetJob，快速完成的打印机
+                        # （虚拟打印机/“直接打印到打印机”模式）可能已出队列，
+                        # 无法区分“完成”与“未入队”，按完成处理并留痕。
+                        _logger.warning(
+                            "首次观察任务前队列句柄打开曾失败，任务可能已快速完成："
+                            "printer=%s job_id=%s failures=%d",
                             printer_name, job_id, get_job_failures)
                         return True
                     _try_cancel_job(printer_name, job_id)
@@ -1080,11 +1093,15 @@ class GdiPrinter:
             _logger.info("已提交打印任务：printer=%s job_id=%s pages=%s",
                          self.printer_name, job_id, self.pages_sent)
             return job_id
-        except BaseException:
-            _logger.exception(
-                "打印任务执行异常：printer=%s job_id=%s pages_sent=%s",
-                self.printer_name, job_id, self.pages_sent,
-            )
+        except BaseException as exc:
+            if isinstance(exc, CancelledByUser):
+                _logger.info("打印任务被用户取消：printer=%s job_id=%s pages_sent=%s",
+                             self.printer_name, job_id, self.pages_sent)
+            else:
+                _logger.exception(
+                    "打印任务执行异常：printer=%s job_id=%s pages_sent=%s",
+                    self.printer_name, job_id, self.pages_sent,
+                )
             if job_started and hdc:
                 try:
                     _gdi32.AbortDoc(hdc)

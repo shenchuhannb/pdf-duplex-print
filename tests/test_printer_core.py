@@ -173,3 +173,72 @@ class TestValidatePrinterConnection:
         monkeypatch.setattr(printer_core, "_gdi32", fake_gdi)
         printer_core.validate_printer_connection(
             "P1007", PrinterOptions(), timeout=5.0)
+
+
+class TestValidatePrecheckTimeout:
+    """队列预检（OpenPrinter/GetPrinter 同为 spooler RPC）也必须在超时保护内。"""
+
+    def test_hanging_precheck_times_out(self, monkeypatch):
+        hang = threading.Event()
+        monkeypatch.setattr(
+            printer_core, "check_printer_ready", lambda name: hang.wait(30))
+        try:
+            with pytest.raises(PrintError, match="超时"):
+                printer_core.validate_printer_connection(
+                    "P1007", PrinterOptions(), timeout=0.3)
+        finally:
+            hang.set()
+
+    def test_offline_precheck_keeps_exception_type(self, monkeypatch):
+        from core_utils import PrinterOfflineError
+
+        def offline(name):
+            raise PrinterOfflineError("离线")
+
+        monkeypatch.setattr(printer_core, "check_printer_ready", offline)
+        with pytest.raises(PrinterOfflineError):
+            printer_core.validate_printer_connection(
+                "P1007", PrinterOptions(), timeout=5.0)
+
+
+class TestWaitNeverObserved:
+    """任务从未在队列中观察到：首次观察及时→报错；被 OpenPrinter 重试推迟→按完成兜底。"""
+
+    def _fake_queue(self, monkeypatch, open_fail_times=0):
+        state = {"opens": 0}
+
+        def open_printer(name):
+            state["opens"] += 1
+            if state["opens"] <= open_fail_times:
+                raise OSError("spooler busy")
+            return object()
+
+        def get_job(handle, job_id, level):
+            raise OSError("job not found")
+
+        fake = types.SimpleNamespace(**{
+            name: getattr(win32print, name)
+            for name in dir(win32print) if name.isupper()
+        })
+        fake.OpenPrinter = open_printer
+        fake.ClosePrinter = lambda handle: None
+        fake.GetPrinter = lambda handle, level: {
+            "Status": 0, "Attributes": 0, "cJobs": 0,
+        }
+        fake.GetJob = get_job
+        fake.SetJob = lambda *a: None
+        monkeypatch.setattr(printer_core, "win32print", fake)
+        monkeypatch.setattr(printer_core, "JOB_POLL_INTERVAL", 0.01)
+        monkeypatch.setattr(printer_core, "RETRY_BACKOFF_SECONDS", 0.01)
+        monkeypatch.setattr(printer_core, "PRINTER_STATUS_POLL_INTERVAL", 0.01)
+
+    def test_prompt_observation_missing_raises(self, monkeypatch):
+        self._fake_queue(monkeypatch)
+        with pytest.raises(PrintError, match="未能在队列中观察到"):
+            printer_core.wait_for_print_job(
+                "P1007", 42, threading.Event())
+
+    def test_delayed_observation_falls_back_to_complete(self, monkeypatch):
+        self._fake_queue(monkeypatch, open_fail_times=1)
+        assert printer_core.wait_for_print_job(
+            "P1007", 42, threading.Event()) is True

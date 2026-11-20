@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 from core_utils import (
     CancelledByUser, PdfError, PrintError, PrinterOfflineError, PrintTimeoutError,
     SettingsError, ToolError, format_page_list, is_pdf_path, is_word_path, is_wps_path,
-    parse_page_range, split_drop_data,
+    parse_page_range, split_conversion_records, split_drop_data,
 )
 from image_convert import (
     ImageConvertError, image_to_pdf, is_image_path, supported_extensions_text,
@@ -78,20 +78,6 @@ from ui_helpers import (
 
 
 _logger = logging.getLogger("pdf_duplex")
-
-
-def split_conversion_records(records: List[dict]) -> Tuple[List[dict], List[dict]]:
-    """Split unconverted office/image records into pending and failed groups."""
-    conversion_files = [
-        record for record in records
-        if record.get("kind") in ("word", "wps", "image")
-        and not record.get("pdf_path")
-    ]
-    failed = [record for record in conversion_files
-              if record.get("status") == "转换失败"]
-    pending = [record for record in conversion_files
-               if record.get("status") != "转换失败"]
-    return pending, failed
 
 
 class WorkerMixin:

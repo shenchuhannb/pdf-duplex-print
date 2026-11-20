@@ -7,7 +7,8 @@ win32print = pytest.importorskip("win32print", reason="需要 pywin32")
 
 from core_utils import PrintError
 from printer_core import (
-    PrinterOptions, _fit_rect, _job_status_flags, devmode_field_updates,
+    PrinterOptions, _fit_rect, _job_status_flags, _printer_is_offline,
+    devmode_field_updates,
     validate_side_order,
 )
 
@@ -78,6 +79,22 @@ class TestJobStatusFlags:
         """厂商自定义文本包含 error 子串但不是一个词时，不能误判为任务错误。"""
         flags = _job_status_flags({"Status": None, "pStatus": "terrorlevel warning"})
         assert not (flags & win32print.JOB_STATUS_ERROR)
+
+
+class TestPrinterOfflineClassification:
+    def test_usb_work_offline_attribute_is_not_authoritative(self):
+        assert not _printer_is_offline({
+            "Status": 0,
+            "Attributes": win32print.PRINTER_ATTRIBUTE_WORK_OFFLINE,
+            "pPortName": "USB001",
+        })
+
+    def test_non_usb_work_offline_attribute_is_honored(self):
+        assert _printer_is_offline({
+            "Status": 0,
+            "Attributes": win32print.PRINTER_ATTRIBUTE_WORK_OFFLINE,
+            "pPortName": "WSD-1234",
+        })
 
 
 class TestFitRect:

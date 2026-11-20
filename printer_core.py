@@ -35,7 +35,7 @@ from core_utils import PrintError, PrinterOfflineError, PrintTimeoutError, Cance
 
 JOB_POLL_INTERVAL = 3.0              # 老式 USB 驱动的队列轮询间隔（秒）
 PRINTER_STATUS_POLL_INTERVAL = 10.0  # 更慢地读取打印机/端口状态，避免驱动被连续探测
-JOB_TIMEOUT_SECONDS = 1800.0         # 单个打印任务等待上限（秒）
+JOB_TIMEOUT_SECONDS = 300.0          # 单个打印任务等待上限（秒）
 POST_JOB_SETTLE_SECONDS = 2.0        # 任务完成后的额外等待，给机械出纸留余量
 
 # 稳定性参数（对标 PDFtoPrinter / winprint 的提交重试做法）：
@@ -490,15 +490,11 @@ def get_printer_status(printer_name: str) -> Dict[str, object]:
                 pass
 
     status = int(info.get("Status") or 0)
-    attributes = int(info.get("Attributes") or 0)
     jobs = int(info.get("cJobs") or 0)
     data["flags"] = status
     data["jobs"] = jobs
 
-    # PRINTER_ATTRIBUTE_WORK_OFFLINE is sticky for some USB drivers even while
-    # the spooler reports the device as ready. Use the live status bit here;
-    # otherwise healthy local printers are incorrectly rejected as offline.
-    if status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
+    if _printer_is_offline(info):
         data["offline"] = True
     if status & getattr(win32print, "PRINTER_STATUS_PAPER_JAM", 0x8):
         data["jam"] = True
@@ -535,6 +531,19 @@ def get_printer_status(printer_name: str) -> Dict[str, object]:
     return data
 
 
+def _printer_is_offline(info: dict) -> bool:
+    """Classify offline state without trusting sticky USB driver attributes."""
+    status = int(info.get("Status") or 0)
+    if status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
+        return True
+    attributes = int(info.get("Attributes") or 0)
+    work_offline = getattr(win32print, "PRINTER_ATTRIBUTE_WORK_OFFLINE", 0x400)
+    port = str(info.get("pPortName") or "").upper()
+    # HP P1007 and similar USB port monitors report WORK_OFFLINE permanently.
+    # For USB ports, the live PRINTER_STATUS_OFFLINE bit is authoritative.
+    return bool(attributes & work_offline) and not port.startswith("USB")
+
+
 def check_printer_ready(printer_name: str) -> None:
     """打印前的轻量检查：能否打开打印机、是否处于脱机/缺纸状态。"""
     if win32print is None:
@@ -562,7 +571,12 @@ def validate_printer_connection(printer_name: str, options: "PrinterOptions") ->
     check_printer_ready(printer_name)
     hdc = None
     try:
-        hdc, _devmode_buffer = _create_printer_dc(printer_name, options)
+        # Do not load a user-modified DEVMODE during preflight. Some host-based
+        # USB drivers initialize their full print session at this point.
+        hdc = _gdi32.CreateDCW("WINSPOOL", printer_name, None, None)
+        if not hdc:
+            raise PrinterOfflineError(
+                f"无法打开打印机「{printer_name}」：{_win_error_text()}")
         if (int(_gdi32.GetDeviceCaps(hdc, HORZRES)) <= 0
                 or int(_gdi32.GetDeviceCaps(hdc, VERTRES)) <= 0):
             raise PrintError(
@@ -663,14 +677,14 @@ def wait_for_print_job(
             now = time.time()
             if now - last_printer_status_check >= PRINTER_STATUS_POLL_INTERVAL:
                 printer_info = win32print.GetPrinter(handle, 2) or {}
-                printer_status = int(printer_info.get("Status") or 0)
-                last_printer_status_check = now
-                if printer_status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
+                if _printer_is_offline(printer_info):
                     _try_cancel_job(printer_name, job_id)
                     raise PrinterOfflineError(
                         f"打印机「{printer_name}」已脱机，打印任务已取消。\n"
                         "请检查电源与连接后重新打印。"
                     )
+                last_printer_status_check = now
+                printer_status = int(printer_info.get("Status") or 0)
                 if (printer_status & getattr(win32print, "PRINTER_STATUS_PAUSED", 0x1)
                         and not paused_hint_logged and log):
                     paused_hint_logged = True
@@ -690,11 +704,12 @@ def wait_for_print_job(
                             "打印任务已从队列消失：printer=%s job_id=%s failures=%d",
                             printer_name, job_id, get_job_failures)
                         return True
-                    _try_cancel_job(printer_name, job_id)
-                    raise PrintError(
-                        f"打印任务 #{job_id} 提交后未能在队列中观察到，"
-                        f"请检查打印服务、驱动和打印机端口。\n最后错误：{exc}"
-                    ) from exc
+                    _logger.warning(
+                        "打印任务提交后在首次队列查询前已消失：printer=%s job_id=%s "
+                        "failures=%d；EndDoc 已成功，按已提交处理",
+                        printer_name, job_id, get_job_failures,
+                    )
+                    return True
                 time.sleep(JOB_POLL_INTERVAL)
                 continue
             get_job_failures = 0

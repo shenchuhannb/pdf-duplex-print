@@ -122,8 +122,17 @@ def _self_check(root, args, app) -> None:
 
 
 def main(argv=None) -> None:
+    worker_args = list(sys.argv[1:] if argv is None else argv)
+    if worker_args and worker_args[0] == "--word-convert-worker":
+        from word_convert import _main as word_convert_main
+        raise SystemExit(word_convert_main(worker_args[1:]))
+
     # 日志落盘（%APPDATA%\PDFDuplexPrint\logs\app.log），便于打印失败后排查
-    get_logger()
+    logger = get_logger()
+    logger.info(
+        "应用启动：executable=%s source=%s cwd=%s argv=%s",
+        sys.executable, os.path.abspath(__file__), os.getcwd(), sys.argv[1:],
+    )
 
     # 任务栏图标/分组：必须在创建 Tk 窗口之前给进程设置显式 AppUserModelID，
     # 否则 pythonw.exe 启动时任务栏会沿用宿主进程的 python 图标。

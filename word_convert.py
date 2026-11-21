@@ -390,7 +390,7 @@ def _font_table_names(xml: str):
 
 
 def _docx_font_names(path: str):
-    """从 .docx 的 zip 中收集文档引用的字体名，返回 ``(字体集合, 是否有可判源)``。
+    """从 .docx 的 zip 中收集正文/样式实际引用的字体名。
 
     ``有可判源`` 指确实读到了 rFonts 或 fontTable：只有在这种情况下
     “没有缺失”才是可靠结论；纯空文档仍按“未能预检”。
@@ -411,8 +411,8 @@ def _docx_font_names(path: str):
     for part in ("word/document.xml", "word/styles.xml"):
         found, _has_tags = _fonts_from_rfonts(parts.get(part, ""), theme_xml)
         names |= found
-    table_names, has_table = _font_table_names(parts.get("word/fontTable.xml", ""))
-    names |= table_names
+    # Word 的 fontTable 常保留未使用字体，条目本身不能作为缺失依据。
+    has_table = _font_table_names(parts.get("word/fontTable.xml", ""))[1]
     looked = bool(names) or has_table
     return names, looked
 
@@ -884,8 +884,8 @@ def convert_batch(items: List[dict], timeout_per_file: float = 180.0,
     open(results_path, "w", encoding="utf-8").close()
 
     before = conversion_processes()
-    command = [python_exe or sys.executable, os.path.abspath(__file__),
-               "--batch", manifest_path, "--results", results_path]
+    command = _worker_command(
+        python_exe, "--batch", manifest_path, "--results", results_path)
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                creationflags=CREATE_NO_WINDOW)
     results: dict = {}
@@ -1018,8 +1018,7 @@ def convert_file(src: str, dst: str, timeout: float = 180.0,
         os.makedirs(folder, exist_ok=True)
 
     before = conversion_processes()
-    command = [python_exe or sys.executable, os.path.abspath(__file__),
-               "--src", src, "--dst", dst]
+    command = _worker_command(python_exe, "--src", src, "--dst", dst)
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                creationflags=CREATE_NO_WINDOW)
     try:
@@ -1082,6 +1081,14 @@ def _last_line(blob) -> str:
     return text.splitlines()[-1] if text else ""
 
 
+def _worker_command(python_exe: Optional[str], *args: str) -> List[str]:
+    """Build the child command for source and PyInstaller-frozen launches."""
+    executable = python_exe or sys.executable
+    if getattr(sys, "frozen", False):
+        return [executable, "--word-convert-worker", *args]
+    return [executable, os.path.abspath(__file__), *args]
+
+
 def _remove_quietly(path: str) -> None:
     try:
         os.remove(path)
@@ -1091,6 +1098,13 @@ def _remove_quietly(path: str) -> None:
 
 def _main(argv=None) -> int:
     import argparse
+
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None:
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except (AttributeError, OSError, ValueError):
+                pass
 
     parser = argparse.ArgumentParser(description="Word/WPS 转 PDF（子进程入口）")
     parser.add_argument("--src")

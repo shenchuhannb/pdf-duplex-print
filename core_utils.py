@@ -5,7 +5,7 @@
 """
 
 import re
-from typing import List
+from typing import List, Tuple
 
 MM_PER_INCH = 25.4
 PT_PER_INCH = 72.0
@@ -189,3 +189,17 @@ def is_word_path(path: str) -> bool:
 def is_wps_path(path: str) -> bool:
     """判断路径是否为 WPS 文字文档（.wps）。"""
     return str(path).strip().lower().endswith(".wps")
+
+
+def split_conversion_records(records: List[dict]) -> Tuple[List[dict], List[dict]]:
+    """把未转换的 office/图片记录拆成“待转换”和“转换失败”两组（纯函数）。"""
+    conversion_files = [
+        record for record in records
+        if record.get("kind") in ("word", "wps", "image")
+        and not record.get("pdf_path")
+    ]
+    failed = [record for record in conversion_files
+              if record.get("status") == "转换失败"]
+    pending = [record for record in conversion_files
+               if record.get("status") != "转换失败"]
+    return pending, failed

@@ -104,6 +104,14 @@ class LogPanelMixin:
         sash.bind("<B1-Motion>", self._on_log_sash_drag)
         sash.bind("<ButtonRelease-1>", lambda _e: setattr(self, "_log_user_sized", True))
         self.log_sash = sash
+        grip = tk.Frame(sash, background=c["border_strong"], width=self._px(42),
+                        height=self._px(2))
+        grip.place(relx=0.5, rely=0.5, anchor="center")
+        for widget in (sash, grip):
+            widget.bind("<Button-1>", self._on_log_sash_press)
+            widget.bind("<B1-Motion>", self._on_log_sash_drag)
+            widget.bind("<ButtonRelease-1>",
+                        lambda _e: setattr(self, "_log_user_sized", True))
 
         drawer = tk.Frame(parent, background=c["surface"], highlightthickness=1,
                           highlightbackground=c["border"], height=self._log_height)
@@ -113,25 +121,26 @@ class LogPanelMixin:
         drawer.rowconfigure(1, weight=1)
         self.log_drawer = drawer
 
-        head = tk.Frame(drawer, background=c["surface"], padx=self._px(10), pady=self._px(2))
+        head = tk.Frame(drawer, background=c["surface_alt"],
+                        padx=self._px(10), pady=self._px(4))
         head.grid(row=0, column=0, sticky="ew")
         head.columnconfigure(5, weight=1)
-        tk.Label(head, text="日志", background=c["surface"], foreground=c["text"],
+        tk.Label(head, text="运行日志", background=c["surface_alt"], foreground=c["text"],
                  font=_theme.FONT_SUBTITLE).grid(row=0, column=0, sticky="w")
-        self.export_log_btn = ttk.Button(head, text="导出", style="Ghost.TButton",
+        self.export_log_btn = ttk.Button(head, text="导出", style="ToolbarGhost.TButton",
                                          command=self.export_log)
         self.export_log_btn.grid(row=0, column=1, padx=(self._px(GAP), 0))
-        ttk.Button(head, text="清空", style="Ghost.TButton",
+        ttk.Button(head, text="清空", style="ToolbarGhost.TButton",
                    command=self.clear_log).grid(row=0, column=2, padx=(self._px(GAP_S), 0))
-        ttk.Button(head, text="打开目录", style="Ghost.TButton",
+        ttk.Button(head, text="打开目录", style="ToolbarGhost.TButton",
                    command=self.open_log_dir).grid(row=0, column=3, padx=(self._px(GAP_S), 0))
         self.log_detail_var = tk.StringVar(value="页序/缩略图 ▸")
-        ttk.Button(head, textvariable=self.log_detail_var, style="Ghost.TButton",
+        ttk.Button(head, textvariable=self.log_detail_var, style="ToolbarGhost.TButton",
                    command=self._toggle_log_detail).grid(row=0, column=4, padx=(self._px(GAP_S), 0))
         # 最新一条始终可见（按实际可用像素省略，不裁切半个字）
         self.log_summary_var = tk.StringVar(value="暂无日志")
         self._log_summary_full = "暂无日志"
-        summary = tk.Label(head, textvariable=self.log_summary_var, background=c["surface"],
+        summary = tk.Label(head, textvariable=self.log_summary_var, background=c["surface_alt"],
                            foreground=c["muted"], font=_theme.FONT_SMALL, anchor="e")
         summary.grid(row=0, column=5, sticky="e", padx=(self._px(GAP), 0))
         self.log_summary_label = summary

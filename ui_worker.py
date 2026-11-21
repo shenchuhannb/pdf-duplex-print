@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 from core_utils import (
     CancelledByUser, PdfError, PrintError, PrinterOfflineError, PrintTimeoutError,
     SettingsError, ToolError, format_page_list, is_pdf_path, is_word_path, is_wps_path,
-    parse_page_range, split_drop_data,
+    parse_page_range, split_conversion_records, split_drop_data,
 )
 from image_convert import (
     ImageConvertError, image_to_pdf, is_image_path, supported_extensions_text,
@@ -33,14 +33,15 @@ from word_convert import (
 from pdf_layout import (
     CUSTOM_PAPER_NAME, NUP_CHOICES, PAPER_SIZES_MM, LayoutOptions, build_layout_plan,
     compose_layout_pdf, compute_duplex_orders, compute_merged_duplex_orders,
-    compute_merged_per_copy_orders, compute_single_sided_orders, describe_plan,
+    compute_merged_per_copy_orders, compute_single_sided_orders, content_side_numbers,
+    describe_plan,
     get_pdf_page_count, merge_layout_pdfs, merged_side_ranges, merged_sheet_count,
     plan_batch_summary, preview_metrics, resolve_range_pages,
 )
 from printer_core import (
-    GdiPrinter, PrinterOptions, cancel_job, check_printer_ready, get_default_printer,
+    GdiPrinter, PrinterOptions, cancel_job, get_default_printer,
     get_printable_insets_pt, get_printer_sources, get_printer_status, list_printers,
-    open_directory, set_job_paused, wait_for_print_job,
+    open_directory, set_job_paused, validate_printer_connection, wait_for_print_job,
 )
 from settings_store import (
     acrobat_defaults, add_recent, default_settings, load_settings, save_settings,
@@ -137,6 +138,9 @@ class WorkerMixin:
                     self._update_flow_steps()
                 elif kind == "busy":
                     self._set_busy(bool(item[1]))
+                    if not item[1]:
+                        # 打印结束立即刷新一次打印机状态（打印期间暂停驱动探测）
+                        self._poll_printer_status(reschedule=False, force=True)
                 elif kind == "call":
                     try:
                         item[1]()
@@ -209,9 +213,15 @@ class WorkerMixin:
     def _set_busy(self, busy: bool) -> None:
         self.print_active = busy
         state = "disabled" if busy else "normal"
-        for button in (self.add_file_btn, self.add_dir_btn, self.remove_btn, self.clear_btn,
-                       self.up_btn, self.down_btn, self.dedupe_btn, self.explore_btn,
-                       self.refresh_btn, self.restore_btn if hasattr(self, "restore_btn") else None):
+        for button in (
+                getattr(self, "add_file_btn", None),
+                getattr(self, "add_dir_btn", None),
+                getattr(self, "remove_btn", None),
+                getattr(self, "clear_btn", None),
+                getattr(self, "more_btn", None),
+                getattr(self, "refresh_btn", None),
+                getattr(self, "restore_btn", None),
+        ):
             if button is not None:
                 button.configure(state=state)
         self.start_btn.configure(state="disabled" if busy else "normal")
@@ -267,7 +277,25 @@ class WorkerMixin:
 
     # ---------------------------------------------------------- 打印执行
     def start_print(self) -> None:
+        """Start printing and surface unexpected UI-thread failures."""
+        try:
+            self._start_print_impl()
+        except Exception as exc:
+            _logger.exception("开始打印入口异常")
+            try:
+                self._set_busy(False)
+                self.status_var.set("开始打印失败")
+                self._append_log(f"开始打印失败：{exc}")
+                messagebox.showerror("开始打印失败", str(exc), parent=self.root)
+            except Exception:
+                _logger.exception("显示开始打印入口错误失败")
+
+    def _start_print_impl(self) -> None:
         """校验所有输入并启动后台打印线程（界面不冻结）。"""
+        _logger.info(
+            "收到开始打印请求：active=%s files=%s printer=%s",
+            self.print_active, len(self.files), self.current_printer(),
+        )
         if self.print_active:
             return
         printer = self.current_printer()
@@ -278,27 +306,23 @@ class WorkerMixin:
             return
 
         # Word/WPS/图片必须先转成 PDF 才能确定页数与整批翻面顺序
-        pending_word = [f for f in self.files
-                        if f.get("kind") in ("word", "wps", "image")
-                        and not f.get("pdf_path")]
+        pending_word, failed = split_conversion_records(self.files)
         if pending_word:
-            failed = [f for f in pending_word if f.get("status") == "转换失败"]
             self._start_word_conversions()
-            if failed:
-                names = "、".join(os.path.basename(f["path"]) for f in failed[:5])
-                messagebox.showerror(
-                    "文件转换失败",
-                    f"以下文件未能转换为 PDF：{names}\n\n"
-                    "Word/WPS 请安装/修复 Microsoft Word 或 WPS，或手动另存为 PDF "
-                    "后重新导入；图片请确认文件未损坏。",
-                    parent=self.root)
-            else:
-                messagebox.showinfo(
-                    "文件正在转换",
-                    f"还有 {len(pending_word)} 个文件正在转换为 PDF，"
-                    "请等状态变为“已转换”后再开始打印。",
-                    parent=self.root)
+            detail = (f"\n已有 {len(failed)} 个文件转换失败，本次将跳过这些文件。"
+                      if failed else "")
+            messagebox.showinfo(
+                "文件正在转换",
+                f"还有 {len(pending_word)} 个文件正在转换为 PDF，"
+                f"请等状态变为“已转换”后再开始打印。{detail}",
+                parent=self.root)
             return
+        if failed:
+            names = "、".join(os.path.basename(f["path"]) for f in failed[:5])
+            suffix = f" 等 {len(failed)} 个" if len(failed) > 5 else ""
+            self._append_log(
+                f"已跳过 {len(failed)} 个转换失败文件：{names}{suffix}。"
+                "其余 PDF 文件仍可继续打印。")
 
         try:
             copies = int(float(str(self.vars["copies"].get()).strip()))
@@ -429,8 +453,17 @@ class WorkerMixin:
             f"开始打印：{len(jobs)} 个文件，份数 {copies}，"
             f"{flow_names.get(snapshot['print_flow'], '整批翻面·打完全部再取纸')}"
             f"{'，按份逐份执行' if copies > 1 and snapshot['copy_exec_on'] else ''}")
-        self.worker = threading.Thread(target=self._worker_main, args=(snapshot,), daemon=True)
+        _logger.info(
+            "开始后台打印：printer=%s jobs=%s copies=%s manual_duplex=%s wait_mode=%s",
+            snapshot["printer"], len(jobs), copies,
+            snapshot["manual_duplex"], snapshot["wait_mode"],
+        )
+        self.worker = threading.Thread(
+            target=self._worker_entry, args=(snapshot,),
+            name="PDFDuplexPrintWorker", daemon=True,
+        )
         self.worker.start()
+        _logger.info("后台打印线程已启动：alive=%s", self.worker.is_alive())
 
     def _paper_is_landscape(self) -> bool:
         orientation = str(self.vars["orientation"].get() or "auto")
@@ -479,14 +512,26 @@ class WorkerMixin:
         self._append_log("用户请求取消打印。")
 
     # ------------------------------------------------------------- 工作线程
+    def _worker_entry(self, snapshot: dict) -> None:
+        try:
+            self._worker_main(snapshot)
+        except BaseException:
+            _logger.exception("打印工作线程异常退出")
+            self._post(("busy", False))
+            self._post(("status", "打印线程异常退出"))
+
     def _worker_main(self, snapshot: dict) -> None:
+        _logger.info(
+            "打印工作线程启动：printer=%s jobs=%s",
+            snapshot.get("printer"), len(snapshot.get("jobs") or []),
+        )
         temp_dir = ""
         prepared: List[dict] = []
         completed = False
         cancelled = False
         error_text = ""
         try:
-            check_printer_ready(snapshot["printer"])
+            validate_printer_connection(snapshot["printer"], snapshot["printer_options"])
             temp_dir = create_temp_dir(PRINT_TEMP_PREFIX)
             target_dir = snapshot["output_dir"] if snapshot["keep_output"] else temp_dir
             if snapshot["keep_output"]:
@@ -558,12 +603,14 @@ class WorkerMixin:
                     self._remove_temp_file(item["path"])
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
-            statuses = [("已取消" if cancelled else ("已完成" if completed else "失败"), item["job"]["iid"])
+            # 与 _poll_ui_queue 的 rows 处理器约定一致：(iid, 状态文本)
+            statuses = [(item["job"]["iid"],
+                         "已取消" if cancelled else ("已完成" if completed else "失败"))
                         for item in prepared]
             self._post(("rows", statuses))
             # 转换产物与打印临时文件一并在完成后删除（异常/取消路径同样执行）
             self._post(("call", self._cleanup_word_temps))
-            self._post(("progress", 0, 1))
+            self._post(("progress", 1, 1) if completed else ("progress", 0, 1))
             self._post(("current", ""))
             if completed:
                 self._post(("status", "整批打印完成"))
@@ -656,6 +703,17 @@ class WorkerMixin:
         if merged_pages != total:
             raise PdfError("合并任务页数与预期不一致，请重试。")
         ranges = merged_side_ranges(counts)
+
+        if sum(len(content_side_numbers(item["plan"])) for item in prepared) == 1:
+            # 整批只有 1 面内容（典型：单个文件只有 1 页）：无需翻面，
+            # 也不打印双面配对补出的空白反面，直接按单面输出。
+            order = compute_single_sided_orders(1, snapshot["copies"])
+            self._post(("rows", [(item["job"]["iid"], "单面打印") for item in prepared]))
+            self._post(("log", "整批仅 1 个输出面有内容，按单面打印，无需翻面。"))
+            self._print_phase(merged_path, order, "PDF 单面打印", snapshot,
+                              "单面打印 · 仅 1 页内容，无需翻面")
+            self._post(("log", f"单面打印完成：1 个输出面 × {snapshot['copies']} 份。"))
+            return
 
         self._post(("log", (
             f"整批打印：{len(prepared)} 个文件合并为 {total} 个输出面（{sheets} 张纸），"
@@ -764,29 +822,40 @@ class WorkerMixin:
         for index, item in enumerate(prepared, start=1):
             self._raise_if_stopped()
             job = item["job"]
-            sheets = item["sides"] // 2
+            single_side = content_side_numbers(item["plan"]) == [1]
+            sheets = 1 if single_side else item["sides"] // 2
             fronts, backs = compute_duplex_orders(
                 item["sides"], snapshot["copies"], snapshot["collate"],
                 snapshot["reverse"])
-            self._post(("rows", [(job["iid"], "第1面")]))
-            self._post(("log", f"《{job['name']}》逐文件阶段一：正面。"))
-            self._post(("status", f"逐文件 {index}/{total_files} · 第一面（正面）· "
-                                  f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张"))
-            self._print_phase(item["path"], fronts, f"PDF {job['name']} 正面",
-                              snapshot, f"逐文件 {index}/{total_files} · 第一面（正面）· "
-                                        f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
-            self._raise_if_stopped()
-            if backs:
-                self._post(("rows", [(job["iid"], "等待翻面")]))
-                if not self._ask_flip_file(job, item["sides"], backs, index, total_files):
-                    raise CancelledByUser("用户在翻面提示中选择取消。")
-            self._post(("rows", [(job["iid"], "第2面")]))
-            self._post(("log", f"《{job['name']}》逐文件阶段二：反面（逆序）。"))
-            self._post(("status", f"逐文件 {index}/{total_files} · 第二面（反面）· "
-                                  f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张"))
-            self._print_phase(item["path"], backs, f"PDF {job['name']} 反面",
-                              snapshot, f"逐文件 {index}/{total_files} · 第二面（反面）· "
-                                        f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
+            if single_side:
+                # 仅 1 面内容：fronts 即第 1 面 × 份数，跳过翻面与空白反面
+                self._post(("rows", [(job["iid"], "单面打印")]))
+                self._post(("log", f"《{job['name']}》仅 1 页内容，按单面打印，无需翻面。"))
+                phase = (f"逐文件 {index}/{total_files} · 单面打印 · "
+                         f"《{job['name']}》 · 本文件 1 张 · 已完成 {done_sheets} 张")
+                self._post(("status", phase))
+                self._print_phase(item["path"], fronts, f"PDF {job['name']} 单面",
+                                  snapshot, phase)
+            else:
+                self._post(("rows", [(job["iid"], "第1面")]))
+                self._post(("log", f"《{job['name']}》逐文件阶段一：正面。"))
+                self._post(("status", f"逐文件 {index}/{total_files} · 第一面（正面）· "
+                                      f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张"))
+                self._print_phase(item["path"], fronts, f"PDF {job['name']} 正面",
+                                  snapshot, f"逐文件 {index}/{total_files} · 第一面（正面）· "
+                                            f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
+                self._raise_if_stopped()
+                if backs:
+                    self._post(("rows", [(job["iid"], "等待翻面")]))
+                    if not self._ask_flip_file(job, item["sides"], backs, index, total_files):
+                        raise CancelledByUser("用户在翻面提示中选择取消。")
+                self._post(("rows", [(job["iid"], "第2面")]))
+                self._post(("log", f"《{job['name']}》逐文件阶段二：反面（逆序）。"))
+                self._post(("status", f"逐文件 {index}/{total_files} · 第二面（反面）· "
+                                      f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张"))
+                self._print_phase(item["path"], backs, f"PDF {job['name']} 反面",
+                                  snapshot, f"逐文件 {index}/{total_files} · 第二面（反面）· "
+                                            f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
             self._post(("rows", [(job["iid"], "已完成")]))
             done_sheets += sheets
             remaining = total_files - index
@@ -795,7 +864,7 @@ class WorkerMixin:
             next_name = (prepared[index]["job"]["name"] if remaining else "")
             action = self._ui_call(lambda: self._file_done_modal(
                 job, index, total_files, item["sides"], next_name,
-                mode="by_file", final=(remaining == 0)))
+                mode="by_file", final=(remaining == 0), single_sided=single_side))
             if action == "cancel":
                 raise CancelledByUser("用户在取纸提示中选择取消。")
 
@@ -803,7 +872,8 @@ class WorkerMixin:
                          next_name: str, *, mode: str = "by_file",
                          final: bool = False,
                          group_done: Optional[int] = None,
-                         group_total: Optional[int] = None) -> str:
+                         group_total: Optional[int] = None,
+                         single_sided: bool = False) -> str:
         """取纸确认框：返回 continue / cancel。
 
         - mode=by_file：逐文件反面打印完，取出后打印下一个；最后一个文件
@@ -814,7 +884,7 @@ class WorkerMixin:
         关闭窗口或按 Esc 一律按 cancel 处理（未确认不得继续下一个阶段）。
         """
         result = {"action": "cancel"}
-        sheets = sides // 2
+        sheets = 1 if single_sided else sides // 2
         if mode == "batch":
             title = f"该文件已打完，请取出这 {sheets} 张纸"
             next_line = f"下一个：{next_name} 的反面（同一叠纸继续打印）"
@@ -828,22 +898,33 @@ class WorkerMixin:
             dialog = tk.Toplevel(self.root)
             dialog.withdraw()
             dialog.title(title)
+            dialog.transient(self.root)
             dialog.configure(background=self.colors["surface"])
             dialog.resizable(False, False)
-            body = ttk.Frame(dialog, padding=(16, 14))
+            body = ttk.Frame(dialog, padding=(self._px(20), self._px(16)))
             body.pack(fill="both", expand=True)
-            ttk.Label(body, text=title, style="Subtitle.TLabel").pack(anchor="w")
+            ttk.Label(body, text=title, style="Title.TLabel", wraplength=self._px(540),
+                      justify="left").pack(anchor="w")
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(12), 0))
             if mode == "batch" and group_done is not None and group_total is not None:
                 progress_line = (f"进度：已取出 {group_done}/{group_total} 个文件的反面，"
                                  f"剩余 {max(0, group_total - group_done)} 个文件的反面")
             else:
                 progress_line = (f"进度：已完成 {done}/{total} 个文件，"
                                  f"剩余 {max(0, total - done)} 个")
+            if single_sided:
+                stage_line = "阶段：单面打印已完成 · 本文件 1 张纸（1 个输出面）"
+                sample_line = "仅 1 页内容，无需翻面。"
+            else:
+                stage_line = (f"阶段：第二面（反面）已完成 · 本文件 {sheets} 张纸"
+                              f"（{sides} 个输出面）")
+                sample_line = "示例页序：" + self._duplex_sample_text(sides)
             info = [
                 f"文件：《{job['name']}》（第 {done}/{total} 个文件）",
-                f"阶段：第二面（反面）已完成 · 本文件 {sheets} 张纸（{sides} 个输出面）",
+                stage_line,
                 progress_line,
-                "示例页序：" + self._duplex_sample_text(sides),
+                sample_line,
             ]
             if next_line:
                 info.append(next_line)
@@ -861,8 +942,10 @@ class WorkerMixin:
                     pass
                 dialog.destroy()
 
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(14), 0))
             buttons = ttk.Frame(body)
-            buttons.pack(fill="x", pady=(14, 0))
+            buttons.pack(fill="x", pady=(self._px(10), 0))
             if mode == "batch":
                 action_text = "已取出，继续打印反面"
             elif final:
@@ -871,7 +954,7 @@ class WorkerMixin:
                 action_text = "已取出，打印下一个文件"
             ttk.Button(buttons, text=action_text, style="Accent.TButton",
                        command=lambda: finish("continue")).pack(side="left")
-            ttk.Button(buttons, text="取消打印", style="Ghost.TButton",
+            ttk.Button(buttons, text="取消打印", style="Danger.TButton",
                        command=lambda: finish("cancel")).pack(side="left", padx=(10, 0))
             dialog.protocol("WM_DELETE_WINDOW", lambda: finish("cancel"))
             dialog.bind("<Escape>", lambda _e: finish("cancel"))
@@ -879,12 +962,14 @@ class WorkerMixin:
             self._place_toplevel_over_root(
                 dialog, dialog.winfo_reqwidth() + self._px(8),
                 dialog.winfo_reqheight() + self._px(8))
+            offscreen_alpha = getattr(self, "offscreen_dialog_alpha", None)
+            if offscreen_alpha is not None:
+                dialog.attributes("-alpha", float(offscreen_alpha))
             dialog.deiconify()
-            if getattr(self, "offscreen_dialog_alpha", None) is not None:
-                dialog.attributes("-alpha", float(self.offscreen_dialog_alpha))
             dialog.lift()
             dialog.grab_set()
-            dialog.focus_force()
+            if offscreen_alpha is None:
+                dialog.focus_force()
             dialog.wait_window()
         except tk.TclError:
             return "cancel"
@@ -903,11 +988,15 @@ class WorkerMixin:
             dialog = tk.Toplevel(self.root)
             dialog.withdraw()
             dialog.title(title)
+            dialog.transient(self.root)
             dialog.configure(background=self.colors["surface"])
             dialog.resizable(False, False)
-            body = ttk.Frame(dialog, padding=(16, 14))
+            body = ttk.Frame(dialog, padding=(self._px(20), self._px(16)))
             body.pack(fill="both", expand=True)
-            ttk.Label(body, text=title, style="Subtitle.TLabel").pack(anchor="w")
+            ttk.Label(body, text=title, style="Title.TLabel", wraplength=self._px(540),
+                      justify="left").pack(anchor="w")
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(12), 0))
             info = [
                 "该批所有文件的反面已打印完成。",
                 f"张数：共 {sheets} 张纸（单面朝下时按打印机出纸方向整理）。",
@@ -929,11 +1018,13 @@ class WorkerMixin:
                     pass
                 dialog.destroy()
 
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(14), 0))
             buttons = ttk.Frame(body)
-            buttons.pack(fill="x", pady=(14, 0))
+            buttons.pack(fill="x", pady=(self._px(10), 0))
             ttk.Button(buttons, text="已取出，全部完成", style="Accent.TButton",
                        command=lambda: finish("continue")).pack(side="left")
-            ttk.Button(buttons, text="取消打印", style="Ghost.TButton",
+            ttk.Button(buttons, text="取消打印", style="Danger.TButton",
                        command=lambda: finish("cancel")).pack(side="left", padx=(10, 0))
             dialog.protocol("WM_DELETE_WINDOW", lambda: finish("cancel"))
             dialog.bind("<Escape>", lambda _e: finish("cancel"))
@@ -941,12 +1032,14 @@ class WorkerMixin:
             self._place_toplevel_over_root(
                 dialog, dialog.winfo_reqwidth() + self._px(8),
                 dialog.winfo_reqheight() + self._px(8))
+            offscreen_alpha = getattr(self, "offscreen_dialog_alpha", None)
+            if offscreen_alpha is not None:
+                dialog.attributes("-alpha", float(offscreen_alpha))
             dialog.deiconify()
-            if getattr(self, "offscreen_dialog_alpha", None) is not None:
-                dialog.attributes("-alpha", float(self.offscreen_dialog_alpha))
             dialog.lift()
             dialog.grab_set()
-            dialog.focus_force()
+            if offscreen_alpha is None:
+                dialog.focus_force()
             dialog.wait_window()
         except tk.TclError:
             return "cancel"
@@ -965,6 +1058,10 @@ class WorkerMixin:
         """提交一个打印任务并按设置等待完成（队列监听超时自动降级）。"""
         if not order:
             return
+        _logger.info(
+            "准备提交打印阶段：printer=%s job=%s pdf=%s pages=%s",
+            snapshot["printer"], job_name, pdf_path, len(order),
+        )
         self._raise_if_stopped()
         self._post(("status", phase_text))
         self._post(("log", f"{phase_text}：共 {len(order)} 个输出面。"))
@@ -1017,17 +1114,23 @@ class WorkerMixin:
             dialog = tk.Toplevel(self.root)
             dialog.withdraw()
             dialog.title(title)
+            dialog.transient(self.root)
             dialog.configure(background=self.colors["surface"])
             dialog.resizable(False, False)
-            body = ttk.Frame(dialog, padding=(16, 14))
+            body = ttk.Frame(dialog, padding=(self._px(20), self._px(16)))
             body.pack(fill="both", expand=True)
-            ttk.Label(body, text=title, style="Subtitle.TLabel").pack(anchor="w")
+            ttk.Label(body, text=title, style="Title.TLabel", wraplength=self._px(540),
+                      justify="left").pack(anchor="w")
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(12), 0))
             for line in detail_lines:
                 ttk.Label(body, text=line, justify="left", wraplength=self._px(540),
                           foreground=self.colors["text"]).pack(anchor="w", pady=(6, 0))
-            ttk.Label(body, text=sample, font=_theme.FONT_SMALL,
-                      foreground=self.colors["accent"], justify="left",
-                      wraplength=self._px(540)).pack(anchor="w", pady=(10, 0))
+            tk.Label(body, text=sample, font=_theme.FONT_SMALL,
+                     background=self.colors["accent_soft"],
+                     foreground=self.colors["accent_pressed"], justify="left",
+                     padx=self._px(10), pady=self._px(8),
+                     wraplength=self._px(520)).pack(fill="x", pady=(self._px(12), 0))
             ttk.Label(body, text="关闭窗口或按 Esc 等同于取消；本工具不会自动继续。",
                       style="Muted.TLabel").pack(anchor="w", pady=(10, 0))
 
@@ -1039,12 +1142,14 @@ class WorkerMixin:
                     pass
                 dialog.destroy()
 
+            ttk.Separator(body, orient="horizontal", style="Line.TSeparator").pack(
+                fill="x", pady=(self._px(14), 0))
             buttons = ttk.Frame(body)
-            buttons.pack(fill="x", pady=(14, 0))
+            buttons.pack(fill="x", pady=(self._px(10), 0))
             confirm = ttk.Button(buttons, text="已翻面，继续打印反面",
                                  style="Accent.TButton", command=lambda: finish(True))
             confirm.pack(side="left")
-            ttk.Button(buttons, text="取消打印", style="Ghost.TButton",
+            ttk.Button(buttons, text="取消打印", style="Danger.TButton",
                        command=lambda: finish(False)).pack(side="left", padx=(10, 0))
             dialog.protocol("WM_DELETE_WINDOW", lambda: finish(False))
             dialog.bind("<Escape>", lambda _e: finish(False))
@@ -1052,12 +1157,14 @@ class WorkerMixin:
             self._place_toplevel_over_root(
                 dialog, dialog.winfo_reqwidth() + self._px(8),
                 dialog.winfo_reqheight() + self._px(8))
+            offscreen_alpha = getattr(self, "offscreen_dialog_alpha", None)
+            if offscreen_alpha is not None:
+                dialog.attributes("-alpha", float(offscreen_alpha))
             dialog.deiconify()
-            if getattr(self, "offscreen_dialog_alpha", None) is not None:
-                dialog.attributes("-alpha", float(self.offscreen_dialog_alpha))
             dialog.lift()
             dialog.grab_set()
-            dialog.focus_force()
+            if offscreen_alpha is None:
+                dialog.focus_force()
             confirm.focus_set()
             dialog.wait_window()
         except tk.TclError:

@@ -33,9 +33,10 @@ from word_convert import (
 from pdf_layout import (
     CUSTOM_PAPER_NAME, NUP_CHOICES, PAPER_SIZES_MM, LayoutOptions, build_layout_plan,
     compose_layout_pdf, compute_duplex_orders, compute_merged_duplex_orders,
-    compute_merged_per_copy_orders, compute_single_sided_orders, describe_plan,
+    compute_merged_per_copy_orders, compute_single_sided_orders, content_side_numbers,
+    describe_plan,
     get_pdf_page_count, merge_layout_pdfs, merged_side_ranges, merged_sheet_count,
-    plan_batch_summary, preview_metrics, resolve_range_pages,
+    plan_batch_summary, preview_metrics, resolve_range_pages, side_scale_percents,
 )
 from printer_core import (
     GdiPrinter, PrinterOptions, cancel_job, check_printer_ready, get_default_printer,
@@ -68,6 +69,10 @@ from ui_helpers import (
     WINDOW_DEFAULT_SIZE,
     SCALE_LABELS,
     SCALE_LABEL_TO_VALUE,
+    NUP_LABELS,
+    NUP_LABEL_TO_VALUE,
+    ORIENTATION_LABELS,
+    ORIENTATION_LABEL_TO_VALUE,
     RANGE_LABELS,
     RANGE_LABEL_TO_VALUE,
     PAGE_ORDER_LABELS,
@@ -83,23 +88,40 @@ _logger = logging.getLogger("pdf_duplex")
 class PreviewMixin:
     def _on_preview_frame_configure(self, event=None) -> None:
         width = event.width if event is not None else self.preview_frame.winfo_width()
+        if hasattr(self, "preview_info_label") and width > 1:
+            if int(self.preview_info_label.cget("wraplength")) != width:
+                self.preview_info_label.configure(wraplength=width)
         self._layout_preview_tool(width)
 
     def _layout_preview_tool(self, width: int) -> None:
-        """极窄预览列（<510px）才把翻页/缩放拆成两行。
-
-        1024 宽主界面预览列内宽约 525px，缩短下拉与文案后单行即可放下，
-        这样工具条高度固定，缩放徽标/翻页控件不会随窗口尺寸跳动。
-        """
+        """常规两行：翻页/缩放 + 拼版/方向；窄窗口再把缩放独立成行。"""
         if not hasattr(self, "page_group"):
             return
-        if width < self._px(510):
+        try:
+            short_split = (self.layout_scheme == "split"
+                           and self.root.winfo_height() < self._px(820))
+        except tk.TclError:
+            return
+        if short_split:
+            self.zoom_group.grid_remove()
             self.tool_sep.grid_remove()
-            self.zoom_group.grid_configure(row=1, column=0, sticky="w",
-                                           pady=(self._px(GAP_S), 0))
+            self.layout_group.grid_configure(
+                row=0, column=2, columnspan=1, sticky="w",
+                padx=(self._px(GAP_CARD), 0), pady=0)
         else:
-            self.zoom_group.grid_configure(row=0, column=2, sticky="w", pady=0)
-            self.tool_sep.grid()
+            compact = width < self._px(510)
+            self.zoom_group.grid()
+            self.layout_group.grid_configure(padx=0)
+            if compact:
+                self.tool_sep.grid_remove()
+                self.zoom_group.grid_configure(row=1, column=0, sticky="w",
+                                               pady=(self._px(GAP_S), 0))
+            else:
+                self.zoom_group.grid_configure(row=0, column=2, sticky="w", pady=0)
+                self.tool_sep.grid()
+            self.layout_group.grid_configure(
+                row=2 if compact else 1, column=0, columnspan=3, sticky="w",
+                pady=(self._px(GAP_S), 0))
         # 状态条宽度不足时隐藏快捷键提示（信息随窗口宽度增减，不推挤其它段）
         if hasattr(self, "shortcut_hint_label"):
             try:
@@ -110,6 +132,18 @@ class PreviewMixin:
                     self.shortcut_hint_label.pack(side="right", padx=self._px(8))
             except tk.TclError:
                 pass
+
+    def _on_nup_selected(self, _event=None) -> None:
+        value = NUP_LABEL_TO_VALUE.get(str(self.nup_label_var.get()))
+        if value is not None:
+            self.vars["nup"].set(str(value))
+        self._on_setting_change()
+
+    def _on_orientation_selected(self, _event=None) -> None:
+        value = ORIENTATION_LABEL_TO_VALUE.get(str(self.orientation_label_var.get()))
+        if value:
+            self.vars["orientation"].set(value)
+        self._on_setting_change()
 
     def _on_preview_view_change(self) -> None:
         """单页/双页并排切换：立即重绘（不重新打开 PDF）。"""
@@ -160,22 +194,24 @@ class PreviewMixin:
         head = ttk.Frame(frame)
         head.grid(row=0, column=0, sticky="ew")
         head.columnconfigure(2, weight=1)
-        ttk.Label(head, text="打印预览", style="Subtitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(head, text="成纸预览", style="Subtitle.TLabel").grid(row=0, column=0, sticky="w")
         # 实际缩放百分比做成轻量徽标（浅底小胶囊），不再是一行纯文字
         self.actual_scale_var = tk.StringVar(value="实际 —")
-        badge = tk.Frame(head, background=self.colors["surface_alt"],
-                         highlightthickness=1, highlightbackground=self.colors["border"])
+        badge = tk.Frame(head, background=self.colors["accent_soft"])
         badge.grid(row=0, column=1, sticky="w", padx=(self._px(GAP), self._px(GAP)))
-        tk.Label(badge, textvariable=self.actual_scale_var, background=self.colors["surface_alt"],
-                 foreground=self.colors["accent"], font=_theme.FONT_SMALL,
-                 padx=self._px(6), pady=self._px(1)).pack()
+        tk.Label(badge, textvariable=self.actual_scale_var, background=self.colors["accent_soft"],
+                 foreground=self.colors["accent_pressed"], font=_theme.FONT_SMALL,
+                 padx=self._px(7), pady=self._px(2)).pack()
         ttk.Label(head, text="视图", style="Muted.TLabel").grid(
             row=0, column=3, sticky="e", padx=(0, self._px(GAP_S)))
-        ttk.Radiobutton(head, text="单页", value="single", variable=self.preview_view_var,
-                        command=self._on_preview_view_change).grid(
-            row=0, column=4, padx=(0, self._px(GAP_S)))
-        ttk.Radiobutton(head, text="双页", value="spread", variable=self.preview_view_var,
-                        command=self._on_preview_view_change).grid(row=0, column=5)
+        self.preview_single_radio = ttk.Radiobutton(
+            head, text="单页", value="single", variable=self.preview_view_var,
+            command=self._on_preview_view_change)
+        self.preview_single_radio.grid(row=0, column=4, padx=(0, self._px(GAP_S)))
+        self.preview_spread_radio = ttk.Radiobutton(
+            head, text="双页", value="spread", variable=self.preview_view_var,
+            command=self._on_preview_view_change)
+        self.preview_spread_radio.grid(row=0, column=5)
         ttk.Separator(head, orient="vertical", style="VSep.TSeparator").grid(
             row=0, column=6, sticky="ns", padx=self._px(GAP), pady=self._px(2))
         self.preview_refresh_btn = ttk.Button(head, text="刷新", width=4,
@@ -193,6 +229,29 @@ class PreviewMixin:
         self.zoom_group.grid(row=0, column=2, sticky="w")
         self.tool_sep = ttk.Separator(tool, orient="vertical", style="VSep.TSeparator")
         self.tool_sep.grid(row=0, column=1, sticky="ns", padx=self._px(GAP), pady=self._px(2))
+        self.layout_group = ttk.Frame(tool)
+        self.layout_group.grid(row=1, column=0, columnspan=3, sticky="w",
+                               pady=(self._px(GAP_S), 0))
+
+        ttk.Label(self.layout_group, text="拼版").grid(row=0, column=0, sticky="w")
+        self.nup_label_var = tk.StringVar(
+            value=NUP_LABELS.get(self._int_setting("nup", 1), NUP_LABELS[1]))
+        self.nup_quick_combo = ttk.Combobox(
+            self.layout_group, textvariable=self.nup_label_var, state="readonly", width=7,
+            values=tuple(NUP_LABELS[n] for n in NUP_CHOICES))
+        self.nup_quick_combo.grid(row=0, column=1, sticky="w",
+                                  padx=(self._px(GAP_S), self._px(GAP)))
+        self.nup_quick_combo.bind("<<ComboboxSelected>>", self._on_nup_selected)
+        ttk.Label(self.layout_group, text="方向").grid(row=0, column=2, sticky="w")
+        orientation = str(self.vars["orientation"].get() or "auto")
+        self.orientation_label_var = tk.StringVar(
+            value=ORIENTATION_LABELS.get(orientation, ORIENTATION_LABELS["auto"]))
+        self.orientation_combo = ttk.Combobox(
+            self.layout_group, textvariable=self.orientation_label_var,
+            state="readonly", width=5, values=tuple(ORIENTATION_LABELS.values()))
+        self.orientation_combo.grid(row=0, column=3, sticky="w",
+                                    padx=(self._px(GAP_S), 0))
+        self.orientation_combo.bind("<<ComboboxSelected>>", self._on_orientation_selected)
 
         ttk.Label(self.page_group, text="页", width=2, anchor="e").grid(
             row=0, column=0, padx=(0, self._px(GAP_S)))
@@ -233,7 +292,7 @@ class PreviewMixin:
         # 按 4:3 上限收缩并水平居中（sticky 不含 ew），避免 1024 宽时画布
         # 变成“扁横幅”，纸张图始终按可用空间等比居中。
         self.preview_canvas = tk.Canvas(
-            frame, background=self.colors["surface_alt"], highlightthickness=1,
+            frame, background=self.colors["preview_bg"], highlightthickness=1,
             highlightbackground=self.colors["border"], borderwidth=0,
             width=self._px(420), height=self._px(240))
         self.preview_canvas.grid(row=2, column=0, sticky="ns", pady=(self._px(GAP), 0))
@@ -407,6 +466,8 @@ class PreviewMixin:
           * 单面打印翻面 0 次。
         """
         usable = []
+        content_total = 0
+        flip_files = 0
         for record in self.files:
             if not record.get("pages"):
                 continue
@@ -418,6 +479,10 @@ class PreviewMixin:
                 continue
             plan = build_layout_plan(len(valid), self._layout_options())
             usable.append(max(1, int(copies)) * plan.output_count)
+            sides = content_side_numbers(plan)
+            content_total += len(sides)
+            if sides != [1]:
+                flip_files += 1
 
         files_count = len(usable)
         pages_count = 0
@@ -438,11 +503,11 @@ class PreviewMixin:
             sheets = sum(usable) // 2
             copies = self._int_setting("copies", 1)
             flips = copies if (copies > 1 and bool(self.vars["copy_exec_on"].get())) else 1
-            if files_count == 0:
-                flips = 0
+            if files_count == 0 or content_total == 1:
+                flips = 0      # 整批仅 1 面内容时按单面输出，无需翻面
         else:
             sheets = sum(usable) // 2
-            flips = files_count
+            flips = flip_files  # 单页文件不翻面，只统计真正需要翻面的文件
 
         self.metric_vars["files"].set(str(files_count))
         self.metric_vars["pages"].set(str(pages_count))
@@ -458,6 +523,7 @@ class PreviewMixin:
         """
         counts: List[int] = []
         names: List[str] = []
+        content_total = 0
         single_sided = not bool(self.vars["manual_duplex"].get())
         for record in self.files:
             if not record.get("pages"):
@@ -470,6 +536,7 @@ class PreviewMixin:
                 continue
             plan = build_layout_plan(len(valid), self._layout_options())
             counts.append(plan.output_count)
+            content_total += len(content_side_numbers(plan))
             names.append(os.path.basename(record["path"]))
 
         if not counts:
@@ -479,6 +546,12 @@ class PreviewMixin:
             self.batch_plan_var.set(
                 "单面打印：不进行翻面。\n"
                 f"合并后共 {sum(counts)} 个输出面；勾选“手动双面”后显示整批两阶段页序。")
+            return
+        if content_total == 1:
+            copies = self._int_setting("copies", 1)
+            self.batch_plan_var.set(
+                "仅 1 页内容：按单面打印，无需翻面（预计翻面 0 次）。\n"
+                f"打印页序：第 1 面 × {copies} 份。")
             return
         try:
             flow = str(self.vars["print_flow"].get() or "batch_all")
@@ -536,9 +609,14 @@ class PreviewMixin:
                          fg=self.colors["muted"],
                          background=self.colors["surface"]).pack(side="left", padx=4)
             if phase == 1 and plan.manual_duplex:
+                if content_side_numbers(plan) == [1]:
+                    hint, hint_color = "仅 1 页内容，按单面打印，无需翻面。", self.colors["success"]
+                else:
+                    hint = "↓ 第一面打印完成后，将整叠纸【整体翻面】放回进纸盘 ↓"
+                    hint_color = self.colors["warning"]
                 tk.Label(self.preview_box_frame,
-                         text="↓ 第一面打印完成后，将整叠纸【整体翻面】放回进纸盘 ↓",
-                         font=("Microsoft YaHei UI", 8), fg=self.colors["warning"],
+                         text=hint,
+                         font=("Microsoft YaHei UI", 8), fg=hint_color,
                          background=self.colors["surface"]).pack(anchor="w", pady=(2, 2))
 
     def _side_box(self, parent: tk.Frame, plan, side_no: int,
@@ -575,6 +653,7 @@ class PreviewMixin:
         self.preview_pages = 0
         self.preview_page_index = 0
         self.preview_metrics_data = {}
+        self.preview_side_scales = []
         self._paper_photo_cache.clear()
         for widget in self.thumb_frame.winfo_children():
             widget.destroy()
@@ -657,13 +736,23 @@ class PreviewMixin:
             out_path = os.path.join(temp_dir, "preview.pdf")
             result = compose_layout_pdf(src_path, abs_pages, out_path, layout)
 
-            # 取第一张源页的显示尺寸（已考虑 /Rotate），用于计算缩放百分比
+            # 缩放逐页按源页尺寸计算：首页用于摘要，side_scales 供翻页时逐面显示
+            # （rel -> 绝对页号必须走 result.abs_pages，忽略空白页过滤后原索引会错位）
             src_w, src_h = 595.0, 842.0
+            side_scales: List[Tuple[float, bool]] = []
             try:
                 src_doc = fitz.open(src_path)
-                src_page = src_doc[abs_pages[0] - 1]
-                src_w, src_h = src_page.rect.width, src_page.rect.height
-                src_doc.close()
+                try:
+                    first_page = src_doc[result.abs_pages[0] - 1]
+                    src_w, src_h = first_page.rect.width, first_page.rect.height
+
+                    def _size_for_rel(rel: int) -> Tuple[float, float]:
+                        rect = src_doc[result.abs_pages[rel - 1] - 1].rect
+                        return rect.width, rect.height
+
+                    side_scales = side_scale_percents(result.plan, layout, _size_for_rel)
+                finally:
+                    src_doc.close()
             except Exception:
                 pass
             metrics = preview_metrics(result.plan, layout, src_w, src_h)
@@ -688,6 +777,7 @@ class PreviewMixin:
             self.ui_queue.put(("preview", generation, {
                 "temp_dir": temp_dir, "pages": total, "pngs": pngs, "thumbs": thumbs,
                 "info": describe_plan(result.plan), "metrics": metrics,
+                "side_scales": side_scales,
                 "paper_pts": paper_pts,
             }))
         except ToolError as exc:
@@ -706,6 +796,7 @@ class PreviewMixin:
         self.preview_pngs = {i: data for i, data in enumerate(payload["pngs"])}
         self.preview_info_var.set(str(payload.get("info", "")))
         self.preview_metrics_data = dict(payload.get("metrics") or {})
+        self.preview_side_scales = list(payload.get("side_scales") or [])
         self._draw_advanced_preview()
         self.preview_paper_pts = list(payload.get("paper_pts") or [])
         self._paper_photo_cache.clear()
@@ -732,19 +823,37 @@ class PreviewMixin:
         self._update_actual_scale_text()
         self._show_preview_page(self.preview_page_index)
 
+    def _scale_percent_for(self, index: int) -> float:
+        """指定输出面的实际缩放百分比；无逐面数据时回退首页摘要值。"""
+        scales = getattr(self, "preview_side_scales", None) or []
+        if 0 <= index < len(scales) and scales[index][0] > 0:
+            return float(scales[index][0])
+        return float((self.preview_metrics_data or {}).get("scale_percent") or 0.0)
+
+    @staticmethod
+    def _format_scale_percent(percent: float) -> str:
+        # Acrobat 的比例标签向下取整；内部仍保留逐页计算的完整精度。
+        return str(max(0, int(percent)))
+
     def _update_actual_scale_text(self) -> None:
-        """显示当前缩放模式下的实际百分比（例如“实际 87%”）。"""
+        """显示当前输出面的实际缩放百分比（逐页计算，翻页时跟随源页尺寸变化）。"""
         metrics = self.preview_metrics_data or {}
-        percent = float(metrics.get("scale_percent") or 0.0)
+        index = getattr(self, "preview_page_index", 0)
+        percent = self._scale_percent_for(index)
+        overflow = bool(metrics.get("overflow"))
+        scales = getattr(self, "preview_side_scales", None) or []
+        if 0 <= index < len(scales) and scales[index][0] > 0:
+            overflow = scales[index][1]
         if percent <= 0:
             self.actual_scale_var.set("实际 —")
             return
-        text = f"实际 {percent:.0f}%"
-        if metrics.get("overflow"):
+        number = self._format_scale_percent(percent)
+        text = f"实际 {number}%"
+        if overflow:
             text += "（超出，已裁切）"
         self.actual_scale_var.set(text)
         if hasattr(self, "preview_status_scale_var"):
-            self.preview_status_scale_var.set(f"缩放 {percent:.0f}%")
+            self.preview_status_scale_var.set(f"缩放 {number}%")
 
     def _set_preview_page(self, delta: int) -> None:
         if self.preview_pages <= 0:
@@ -763,6 +872,7 @@ class PreviewMixin:
         if hasattr(self, "preview_page_entry_var"):
             self.preview_page_entry_var.set(str(self.preview_page_index + 1))
         self._sync_widget_states()
+        self._update_actual_scale_text()
         self._draw_paper_preview()
 
     def _get_paper_photo(self, index: int, width: int, height: int):
@@ -814,7 +924,7 @@ class PreviewMixin:
         if width < 80 or height < 80:
             return
         if self.preview_pages <= 0 or not self.preview_pngs:
-            canvas.configure(background=self.colors["surface_alt"])
+            canvas.configure(background=self.colors["preview_bg"])
             self._draw_preview_empty(canvas, width, height)
             self._update_preview_status_strip([])
             return
@@ -836,35 +946,34 @@ class PreviewMixin:
         self._update_preview_status_strip(indexes)
 
     def _draw_preview_empty(self, canvas: tk.Canvas, width: int, height: int) -> None:
-        """空状态：虚线拖拽框 + 纸张图形 + 引导文案，而不是一块空灰。"""
+        """空状态只保留纸张图示和下一步，不再嵌套一个拖拽卡片。"""
         c = self.colors
         has_files = bool(self.files)
-        box_w = min(width - self._px(40), self._px(360))
-        box_h = min(height - self._px(48), self._px(210))
-        x0, y0 = (width - box_w) / 2, (height - box_h) / 2
-        x1, y1 = x0 + box_w, y0 + box_h
-        canvas.create_rectangle(x0, y0, x1, y1, outline=c["border"], dash=(6, 4), width=1)
-
-        # 纸张图形：白纸 + 折角 + 三条正文占位线（纯 Canvas 绘制，无位图依赖）
-        sheet_w = self._px(54)
-        sheet_h = self._px(70)
-        sx, sy = width / 2 - sheet_w / 2, y0 + self._px(22)
+        sheet_w = self._px(48)
+        sheet_h = self._px(64)
+        total_h = self._px(142)
+        sx = width / 2 - sheet_w / 2
+        sy = max(self._px(12), (height - total_h) / 2)
+        canvas.create_rectangle(sx + self._px(3), sy + self._px(3),
+                                sx + sheet_w + self._px(3), sy + sheet_h + self._px(3),
+                                fill=c["shadow_light"], outline="")
         canvas.create_rectangle(sx, sy, sx + sheet_w, sy + sheet_h,
-                                fill=c["surface"], outline=c["border"], width=1)
-        fold = self._px(14)
+                                fill=c["surface"], outline=c["border_strong"], width=1)
+        fold = self._px(12)
         canvas.create_polygon(sx + sheet_w - fold, sy, sx + sheet_w, sy + fold,
                               sx + sheet_w - fold, sy + fold,
-                              fill=c["surface_alt"], outline=c["border"])
+                              fill=c["accent_soft"], outline=c["border_strong"])
         for line in range(3):
-            ly = sy + self._px(30) + line * self._px(10)
-            canvas.create_line(sx + self._px(10), ly, sx + sheet_w - self._px(10), ly,
-                               fill=c["border"])
-        canvas.create_text(width / 2, sy + sheet_h + self._px(18),
-                           text="将 PDF / Word / 图片拖到这里" if not has_files else "正在生成预览…",
-                           fill=c["text"], font=(_theme.FONT_FAMILY, 10, "bold"))
+            ly = sy + self._px(27) + line * self._px(9)
+            canvas.create_line(sx + self._px(9), ly, sx + sheet_w - self._px(9), ly,
+                               fill=c["border_strong"])
         canvas.create_text(
-            width / 2, sy + sheet_h + self._px(40),
-            text="或点击左侧「＋ 添加文件」\nWord / 图片会自动转成 PDF 再打印",
+            width / 2, sy + sheet_h + self._px(18),
+            text="添加文件后显示实际打印效果" if not has_files else "正在生成成纸预览…",
+            fill=c["text"], font=_theme.FONT_SUBTITLE)
+        canvas.create_text(
+            width / 2, sy + sheet_h + self._px(43),
+            text="在左侧添加 PDF、Word 或图片" if not has_files else "正在按当前纸张与拼版设置渲染",
             fill=c["muted"], font=_theme.FONT_SMALL, justify="center", anchor="n")
 
     def _update_preview_status_strip(self, indexes: List[int]) -> None:
@@ -883,8 +992,9 @@ class PreviewMixin:
         if len(indexes) > 1:
             page_text += f"–{indexes[-1] + 1} 面"
         page_text += f" / 共 {self.preview_pages} 面"
-        percent = float(metrics.get("scale_percent") or 0.0)
-        scale_text = f"缩放 {percent:.0f}%" if percent > 0 else "缩放 —"
+        percent = self._scale_percent_for(indexes[0])
+        scale_text = (f"缩放 {self._format_scale_percent(percent)}%"
+                      if percent > 0 else "缩放 —")
         paper_w, paper_h = self._paper_size_for(indexes[0])
         paper_text = f"纸张 {paper_w / 72 * 25.4:.0f}×{paper_h / 72 * 25.4:.0f} mm"
         nup = int(metrics.get("nup") or 1)

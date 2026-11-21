@@ -7,12 +7,53 @@ fitz = pytest.importorskip("fitz", reason="需要 PyMuPDF")
 
 from core_utils import PdfError
 from pdf_layout import (
-    LayoutOptions, append_blank_page_like, build_layout_plan, build_range_pdf,
-    compute_duplex_orders, compute_merged_duplex_orders, compute_merged_per_copy_orders,
-    compute_print_orders, compute_single_sided_orders, merged_side_ranges,
-    merged_sheet_count, nup_grid, paper_size_pt, plan_batch_summary,
-    plan_booklet_sides, plan_nup_sides, resolve_range_pages,
+    NUP_CHOICES, LayoutOptions, append_blank_page_like, build_layout_plan, build_range_pdf,
+    compose_layout_pdf, compute_duplex_orders, compute_merged_duplex_orders,
+    compute_merged_per_copy_orders, compute_print_orders, compute_single_sided_orders,
+    content_side_numbers, merged_side_ranges, merged_sheet_count, nup_grid, paper_size_pt,
+    plan_batch_summary, plan_booklet_sides, plan_nup_sides, resolve_range_pages,
+    side_scale_percents, slot_rects,
 )
+
+
+class TestSideScalePercents:
+    """缩放必须逐页按源页尺寸计算（对齐 Acrobat“适合”），不是整批固定值。"""
+
+    OPTIONS = LayoutOptions(printable_insets_pt=(11.28, 11.28, 15.72, 11.76))
+
+    def test_percent_follows_each_source_page(self):
+        plan = build_layout_plan(2, self.OPTIONS)
+        sizes = {1: (595.28, 841.89), 2: (300.0, 400.0)}   # A4 + 小页面
+        scales = side_scale_percents(plan, self.OPTIONS, lambda rel: sizes[rel])
+        assert len(scales) == 2
+        big, small = scales[0][0], scales[1][0]
+        assert abs(big - 95.47) < 0.2        # A4 -> P1007 可打印区约 95.5%
+        assert small > big + 30              # 小页面放大到槽位，比例明显不同
+
+    def test_blank_side_has_no_percent(self):
+        plan = build_layout_plan(1, self.OPTIONS)          # 双面补 1 空白面
+        scales = side_scale_percents(
+            plan, self.OPTIONS, lambda rel: (595.28, 841.89))
+        assert scales[0][0] > 0
+        assert scales[1] == (0.0, False)
+
+    def test_actual_size_is_hundred_percent(self):
+        options = LayoutOptions(scale_mode="actual",
+                                printable_insets_pt=(11.28, 11.28, 15.72, 11.76))
+        plan = build_layout_plan(1, options)
+        scales = side_scale_percents(plan, options, lambda rel: (595.28, 841.89))
+        assert abs(scales[0][0] - 100.0) < 0.01
+        assert scales[0][1] is True            # 超出可打印区，标记溢出裁切
+
+    def test_eight_up_percent_uses_auto_rotated_source(self):
+        options = LayoutOptions(nup=8, orientation="portrait", manual_duplex=False,
+                                scale_mode="fit")
+        plan = build_layout_plan(8, options)
+        scales = side_scale_percents(plan, options, lambda rel: (595.28, 841.89))
+        slot = slot_rects(plan.paper_pt[0], plan.paper_pt[1], 8, options, gap_mm=2.0)[0]
+        expected = 100.0 * min(slot.width / 841.89, slot.height / 595.28)
+        assert abs(scales[0][0] - expected) < 0.01
+        assert 30 < scales[0][0] < 40
 
 
 # ------------------------------------------------------------------ 双面页序
@@ -165,7 +206,18 @@ class TestGeometry:
     def test_nup_grid(self):
         assert nup_grid(1) == (1, 1)
         assert nup_grid(6) == (3, 2)
+        assert nup_grid(8, landscape=False) == (2, 4)
+        assert nup_grid(8, landscape=True) == (4, 2)
         assert nup_grid(99) == (1, 1)
+
+    def test_eight_up_slots_follow_paper_orientation(self):
+        portrait = slot_rects(595, 842, 8, LayoutOptions())
+        landscape = slot_rects(842, 595, 8, LayoutOptions())
+        assert len(portrait) == len(landscape) == 8
+        assert len({round(slot.x0, 2) for slot in portrait}) == 2
+        assert len({round(slot.y0, 2) for slot in portrait}) == 4
+        assert len({round(slot.x0, 2) for slot in landscape}) == 4
+        assert len({round(slot.y0, 2) for slot in landscape}) == 2
 
     def test_paper_size_orientation(self):
         opts = LayoutOptions(paper_name="A4", orientation="landscape")
@@ -177,6 +229,11 @@ class TestGeometry:
 
     def test_nup_sides_chunks(self):
         assert plan_nup_sides(5, 2) == [[1, 2], [3, 4], [5, None]]
+        assert 8 in NUP_CHOICES
+        assert plan_nup_sides(9, 8) == [
+            [1, 2, 3, 4, 5, 6, 7, 8],
+            [9, None, None, None, None, None, None, None],
+        ]
 
 
 # ------------------------------------------------------------------ 真实 PDF（补页与 build_range_pdf）
@@ -211,6 +268,23 @@ class TestRealPdf:
         total, added = build_range_pdf(str(src), [1, 2, 3, 4], str(out))
         assert (total, added) == (4, False)
 
+    @pytest.mark.parametrize("orientation", ["portrait", "landscape"])
+    def test_eight_up_compose_orientation(self, tmp_path, orientation):
+        src = tmp_path / "eight.pdf"
+        out = tmp_path / f"eight-{orientation}.pdf"
+        _make_pdf(src, 8)
+        result = compose_layout_pdf(
+            str(src), list(range(1, 9)), str(out),
+            LayoutOptions(nup=8, orientation=orientation, manual_duplex=False))
+        assert result.plan.sides == [[1, 2, 3, 4, 5, 6, 7, 8]]
+        doc = fitz.open(str(out))
+        try:
+            assert doc.page_count == 1
+            page = doc[0]
+            assert (page.rect.width > page.rect.height) == (orientation == "landscape")
+        finally:
+            doc.close()
+
     def test_blank_page_keeps_rotation(self, tmp_path):
         src = tmp_path / "rot.pdf"
         _make_pdf(src, 1)
@@ -242,3 +316,29 @@ class TestRealPdf:
             doc.close()
         with pytest.raises(PdfError):
             build_range_pdf(str(tmp_path / "enc2.pdf"), [1], str(tmp_path / "o.pdf"))
+
+
+# ------------------------------------------------------------- 内容面识别（单页免双面）
+class TestContentSideNumbers:
+    """只有 1 面内容时不应再走翻面流程；补页/空槽位不算内容。"""
+
+    def test_single_page_duplex_has_one_content_side(self):
+        plan = build_layout_plan(1, LayoutOptions(manual_duplex=True))
+        assert plan.output_count == 2          # 仍补配对空白页，保持整批偶数不变量
+        assert content_side_numbers(plan) == [1]
+
+    def test_three_pages_all_content_sides(self):
+        plan = build_layout_plan(3, LayoutOptions(manual_duplex=True))
+        assert content_side_numbers(plan) == [1, 2, 3]
+
+    def test_nup_single_output_side(self):
+        plan = build_layout_plan(2, LayoutOptions(manual_duplex=True, nup=2))
+        assert content_side_numbers(plan) == [1]
+
+    def test_booklet_single_page(self):
+        plan = build_layout_plan(1, LayoutOptions(manual_duplex=True, booklet=True))
+        assert content_side_numbers(plan) == [1]
+
+    def test_single_sided_plan_unaffected(self):
+        plan = build_layout_plan(2, LayoutOptions(manual_duplex=False))
+        assert content_side_numbers(plan) == [1, 2]

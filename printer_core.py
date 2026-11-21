@@ -33,7 +33,9 @@ except ImportError:  # pragma: no cover
 
 from core_utils import PrintError, PrinterOfflineError, PrintTimeoutError, CancelledByUser
 
-JOB_POLL_INTERVAL = 1.0              # 打印队列轮询间隔（秒）
+JOB_POLL_INTERVAL = 3.0              # 打印队列轮询间隔（秒；spooler 本地调用，不探测 USB 设备）
+PRINTER_STATUS_POLL_INTERVAL = 3.0   # 打印机状态检查间隔（秒；同为 spooler 本地调用，可安全高频）
+VALIDATE_DC_TIMEOUT_SECONDS = 20.0   # 驱动/端口初始化探测的超时上限（秒）
 JOB_TIMEOUT_SECONDS = 1800.0         # 单个打印任务等待上限（秒）
 POST_JOB_SETTLE_SECONDS = 2.0        # 任务完成后的额外等待，给机械出纸留余量
 
@@ -49,6 +51,10 @@ RETRY_BACKOFF_SECONDS = 0.5          # 退避基数（线性递增）
 # GDI / Win32 常量
 HORZRES = 8
 VERTRES = 10
+PHYSICALWIDTH = 110
+PHYSICALHEIGHT = 111
+PHYSICALOFFSETX = 112
+PHYSICALOFFSETY = 113
 MM_TEXT = 1
 STRETCH_HALFTONE = 4
 SRCCOPY = 0x00CC0020
@@ -278,6 +284,31 @@ def _fit_rect(src_w: int, src_h: int, dst_w: int, dst_h: int) -> Tuple[int, int,
     return x, y, width, height
 
 
+def _paper_dest_rect(
+    src_w: int, src_h: int,
+    printable_w: int, printable_h: int,
+    phys_w: int, phys_h: int, off_x: int, off_y: int,
+) -> Tuple[int, int, int, int]:
+    """整纸位图在打印机 DC 上的目标矩形（设备像素）。
+
+    排版后的 PDF 页面是“整张纸”，内容已按驱动可打印区内缩放好；
+    打印机 DC 的 (0,0) 是可打印区左上角，因此整纸必须画到
+    (-off_x, -off_y, 物理纸宽, 物理纸高)，内容位置才与排版一致。
+    若错误地适配进可打印区，等于把可打印区缩放做两次（P1007 实测
+    95.5% 被缩成 91.1%），比原生 PDF 打印更小、白边更大。
+    驱动不报告物理尺寸/偏移时退回旧的“适配可打印区”行为。
+    """
+    if (phys_w <= 0 or phys_h <= 0 or off_x < 0 or off_y < 0
+            or phys_w < printable_w + off_x or phys_h < printable_h + off_y):
+        return _fit_rect(src_w, src_h, printable_w, printable_h)
+    scale = min(phys_w / src_w, phys_h / src_h)
+    width = max(1, int(round(src_w * scale)))
+    height = max(1, int(round(src_h * scale)))
+    x = -off_x + (phys_w - width) // 2
+    y = -off_y + (phys_h - height) // 2
+    return x, y, width, height
+
+
 def _prepare_dib(pixmap):
     """把 PyMuPDF 的紧密 RGB 采样补齐为 GDI 要求的 4 字节对齐扫描行。
 
@@ -441,10 +472,10 @@ def get_printable_insets_pt(printer_name: str) -> Optional[Tuple[float, float, f
         vert = int(_gdi32.GetDeviceCaps(hdc, 10))             # VERTRES
         dpi_x = int(_gdi32.GetDeviceCaps(hdc, 88)) or 300     # LOGPIXELSX
         dpi_y = int(_gdi32.GetDeviceCaps(hdc, 90)) or 300     # LOGPIXELSY
-        phys_w = int(_gdi32.GetDeviceCaps(hdc, 110))          # PHYSICALWIDTH
-        phys_h = int(_gdi32.GetDeviceCaps(hdc, 111))          # PHYSICALHEIGHT
-        off_x = int(_gdi32.GetDeviceCaps(hdc, 112))           # PHYSICALOFFSETX
-        off_y = int(_gdi32.GetDeviceCaps(hdc, 113))           # PHYSICALOFFSETY
+        phys_w = int(_gdi32.GetDeviceCaps(hdc, PHYSICALWIDTH))
+        phys_h = int(_gdi32.GetDeviceCaps(hdc, PHYSICALHEIGHT))
+        off_x = int(_gdi32.GetDeviceCaps(hdc, PHYSICALOFFSETX))
+        off_y = int(_gdi32.GetDeviceCaps(hdc, PHYSICALOFFSETY))
         if horz <= 0 or vert <= 0 or phys_w <= 0 or phys_h <= 0:
             return None
         scale_x, scale_y = 72.0 / dpi_x, 72.0 / dpi_y
@@ -494,6 +525,13 @@ def get_printer_status(printer_name: str) -> Dict[str, object]:
     data["flags"] = status
     data["jobs"] = jobs
 
+    # 脱机判定取属性位与状态位的并集：
+    # - PRINTER_ATTRIBUTE_WORK_OFFLINE：host-based USB 驱动（如 HP P1007）在设备
+    #   关机/断连时往往只置该属性位，Status 位不更新；漏检会把任务提交给死设备，
+    #   任务堆积后楔死驱动会话，表现为打印机“宕机”需断电恢复；
+    # - PRINTER_STATUS_OFFLINE：另一部分驱动只上报状态位。
+    # 个别驱动属性位粘滞会造成“误报脱机”，但其代价（用户取消脱机模式即可）
+    # 远小于漏报的代价（驱动楔死），因此取并集。
     if attributes & getattr(win32print, "PRINTER_ATTRIBUTE_WORK_OFFLINE", 0x80):
         data["offline"] = True
     if status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
@@ -537,6 +575,9 @@ def check_printer_ready(printer_name: str) -> None:
     """打印前的轻量检查：能否打开打印机、是否处于脱机/缺纸状态。"""
     if win32print is None:
         raise PrintError("缺少 pywin32 库，请执行：pip install pywin32")
+    printer_name = str(printer_name or "").strip()
+    if not printer_name:
+        raise PrintError("未选择打印机，请先选择一个可用的打印机。")
     status = get_printer_status(printer_name)
     if status["offline"]:
         raise PrinterOfflineError(
@@ -548,6 +589,61 @@ def check_printer_ready(printer_name: str) -> None:
         raise PrintError(f"打印机「{printer_name}」报告缺纸，请补充纸张后重试。")
 
 
+def validate_printer_connection(
+    printer_name: str,
+    options: "PrinterOptions",
+    timeout: float = VALIDATE_DC_TIMEOUT_SECONDS,
+) -> None:
+    """在排版前验证打印队列和 GDI 设备上下文都能正常创建。
+
+    仅检查队列状态不足以发现驱动初始化失败；提前创建并立即释放一个 DC，
+    可以把驱动/端口问题转换成可读错误，避免用户等待整批排版后才失败。
+
+    host-based 驱动（如 HP P1007）在设备脱机或端口异常时，CreateDC/
+    DocumentProperties 可能长时间阻塞甚至挂起，且这些阻塞调用无法被中断。
+    因此整个探测（含队列预检——OpenPrinter/GetPrinter 同为 spooler RPC，
+    spooler 卡死时一样会无限阻塞）放在守护线程中执行并设置超时：超时直接
+    抛出可读错误，打印工作线程不会被驱动永久楔死（卡住的探测线程为
+    daemon，不阻塞退出）。
+    """
+    printer_name = str(printer_name or "").strip()
+    probe_error: List[BaseException] = []
+
+    def _probe() -> None:
+        hdc = None
+        try:
+            check_printer_ready(printer_name)
+            hdc, _devmode_buffer = _create_printer_dc(printer_name, options)
+            if (int(_gdi32.GetDeviceCaps(hdc, HORZRES)) <= 0
+                    or int(_gdi32.GetDeviceCaps(hdc, VERTRES)) <= 0):
+                probe_error.append(PrintError(
+                    f"打印机「{printer_name}」未返回有效的可打印区域，"
+                    "请检查驱动或纸张设置。"))
+        except PrintError as exc:
+            probe_error.append(exc)
+        except Exception as exc:  # 驱动层异常统一转成可读提示
+            probe_error.append(PrintError(f"无法初始化打印机驱动「{printer_name}」：{exc}"))
+        finally:
+            if hdc:
+                try:
+                    _gdi32.DeleteDC(hdc)
+                except Exception:
+                    pass
+
+    probe_thread = threading.Thread(
+        target=_probe, name="PrinterValidateProbe", daemon=True)
+    probe_thread.start()
+    probe_thread.join(timeout)
+    if probe_thread.is_alive():
+        raise PrintError(
+            f"初始化打印机「{printer_name}」驱动超时（超过 {timeout:.0f} 秒无响应）。\n"
+            "驱动或端口可能已卡死，请检查打印机电源与 USB 连接，"
+            "必要时在 Windows 服务中重启「Print Spooler」后重试。"
+        )
+    if probe_error:
+        raise probe_error[0]
+
+
 def _try_cancel_job(printer_name: str, job_id: int) -> None:
     """尽力取消卡住的任务，失败不影响主流程。"""
     if win32print is None or job_id <= 0:
@@ -556,10 +652,12 @@ def _try_cancel_job(printer_name: str, job_id: int) -> None:
         handle = win32print.OpenPrinter(printer_name)
         try:
             win32print.SetJob(handle, job_id, 0, None, win32print.JOB_CONTROL_CANCEL)
+            _logger.info("已请求取消打印任务：printer=%s job_id=%s", printer_name, job_id)
         finally:
             win32print.ClosePrinter(handle)
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("取消打印任务失败：printer=%s job_id=%s error=%s",
+                        printer_name, job_id, exc)
 
 
 def set_job_paused(printer_name: str, job_id: int, paused: bool) -> bool:
@@ -600,6 +698,9 @@ def wait_for_print_job(
     paused_hint_logged = False
     open_failures = 0
     get_job_failures = 0
+    job_observed = False
+    poll_delayed = False
+    last_printer_status_check = 0.0
     while True:
         if stop_event.is_set():
             return False
@@ -622,44 +723,72 @@ def wait_for_print_job(
             # 避免偶发 OpenPrinter 失败把整批判为“无法连接队列”。
             open_failures += 1
             if open_failures < OPEN_PRINTER_RETRY_ATTEMPTS and not stop_event.is_set():
+                poll_delayed = True
                 time.sleep(RETRY_BACKOFF_SECONDS * open_failures)
                 continue
             raise PrintError(f"无法连接打印队列：{printer_name}\n{exc}") from exc
         open_failures = 0
 
         try:
-            printer_info = win32print.GetPrinter(handle, 2) or {}
-            attributes = int(printer_info.get("Attributes") or 0)
-            printer_status = int(printer_info.get("Status") or 0)
-            if attributes & getattr(win32print, "PRINTER_ATTRIBUTE_WORK_OFFLINE", 0x80) or \
-                    printer_status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80):
-                _try_cancel_job(printer_name, job_id)
-                raise PrinterOfflineError(
-                    f"打印机「{printer_name}」已脱机，打印任务已取消。\n请检查电源与连接后重新打印。"
-                )
-            if (printer_status & getattr(win32print, "PRINTER_STATUS_PAUSED", 0x1)
-                    and not paused_hint_logged and log):
-                # 不改变流程，只解释“为什么一直没动静”，避免用户干等到监听超时
-                paused_hint_logged = True
-                log("打印机当前处于暂停状态：任务会一直停在队列中，"
-                    "请在 Windows 队列里恢复后继续。")
+            now = time.time()
+            if now - last_printer_status_check >= PRINTER_STATUS_POLL_INTERVAL:
+                printer_info = win32print.GetPrinter(handle, 2) or {}
+                printer_status = int(printer_info.get("Status") or 0)
+                printer_attributes = int(printer_info.get("Attributes") or 0)
+                last_printer_status_check = now
+                # 与预检一致：属性位（host-based 驱动关机/断连时唯一可靠信号）
+                # 与状态位取并集，任一置位即判定脱机并取消任务，避免任务堆积楔死驱动。
+                if (printer_attributes & getattr(win32print, "PRINTER_ATTRIBUTE_WORK_OFFLINE", 0x80)
+                        or printer_status & getattr(win32print, "PRINTER_STATUS_OFFLINE", 0x80)):
+                    _try_cancel_job(printer_name, job_id)
+                    raise PrinterOfflineError(
+                        f"打印机「{printer_name}」已脱机，打印任务已取消。\n"
+                        "请检查电源与连接后重新打印。"
+                    )
+                if (printer_status & getattr(win32print, "PRINTER_STATUS_PAUSED", 0x1)
+                        and not paused_hint_logged and log):
+                    paused_hint_logged = True
+                    log("打印机当前处于暂停状态：任务会一直停在队列中，"
+                        "请在 Windows 队列里恢复后继续。")
 
             try:
                 job = win32print.GetJob(handle, job_id, 2)
-            except Exception:
+            except Exception as exc:
                 # 任务消失通常意味着已出纸完成；但瞬时的 RPC/权限故障（安全软件
                 # 拦截等）同样会让 GetJob 抛异常。连续多次失败才判定“任务已出队列”，
                 # 避免误判完成而提前提示翻面，导致整批正反错位。
                 get_job_failures += 1
                 if get_job_failures >= 3:
-                    _logger.warning("GetJob 连续 %d 次失败，判定任务已出队列（视为完成）",
-                                    get_job_failures)
-                    return True
+                    if job_observed:
+                        _logger.info(
+                            "打印任务已从队列消失：printer=%s job_id=%s failures=%d",
+                            printer_name, job_id, get_job_failures)
+                        return True
+                    if poll_delayed:
+                        # OpenPrinter 重试推迟了首次 GetJob，快速完成的打印机
+                        # （虚拟打印机/“直接打印到打印机”模式）可能已出队列，
+                        # 无法区分“完成”与“未入队”，按完成处理并留痕。
+                        _logger.warning(
+                            "首次观察任务前队列句柄打开曾失败，任务可能已快速完成："
+                            "printer=%s job_id=%s failures=%d",
+                            printer_name, job_id, get_job_failures)
+                        return True
+                    _try_cancel_job(printer_name, job_id)
+                    raise PrintError(
+                        f"打印任务 #{job_id} 提交后未能在队列中观察到，"
+                        f"请检查打印服务、驱动和打印机端口。\n最后错误：{exc}"
+                    ) from exc
                 time.sleep(JOB_POLL_INTERVAL)
                 continue
             get_job_failures = 0
+            job_observed = True
 
             flags = _job_status_flags(job)
+            _logger.info(
+                "打印任务状态：printer=%s job_id=%s status=%s flags=%s pages=%s/%s",
+                printer_name, job_id, job.get("Status"), flags,
+                job.get("PagesPrinted"), job.get("TotalPages"),
+            )
             if flags & getattr(win32print, "JOB_STATUS_OFFLINE", 0):
                 raise PrinterOfflineError(f"打印机「{printer_name}」脱机，请检查连接后重试。")
             if flags & (getattr(win32print, "JOB_STATUS_ERROR", 0)
@@ -801,7 +930,8 @@ def _create_printer_dc(printer_name: str, options: PrinterOptions):
                 else:
                     devmode_ptr = None
                     devmode_buffer = None
-    except Exception:
+    except Exception as exc:
+        _logger.warning("读取打印机 DEVMODE 失败，将使用驱动默认设置：%s", exc)
         devmode_ptr = None
         devmode_buffer = None
     finally:
@@ -910,6 +1040,23 @@ class GdiPrinter:
             printable_h = _gdi32.GetDeviceCaps(hdc, VERTRES)
             if printable_w <= 0 or printable_h <= 0:
                 raise PrintError("无法获取打印机可打印区域，请检查打印机驱动。")
+            phys_w = _gdi32.GetDeviceCaps(hdc, PHYSICALWIDTH)
+            phys_h = _gdi32.GetDeviceCaps(hdc, PHYSICALHEIGHT)
+            off_x = _gdi32.GetDeviceCaps(hdc, PHYSICALOFFSETX)
+            off_y = _gdi32.GetDeviceCaps(hdc, PHYSICALOFFSETY)
+
+            # 先渲染首面，再调用 StartDoc。渲染失败时不会创建一个随后被
+            # AbortDoc 删除的“幽灵任务”，用户可以直接看到真实 PDF 错误。
+            first_page = doc[side_order[0] - 1]
+            try:
+                first_raster = _rasterize(
+                    first_page, self.options.dpi, self.options.color_mode,
+                    ink_saver=getattr(self.options, "ink_saver", False),
+                    annots=getattr(self.options, "annots", True),
+                )
+            except Exception as exc:
+                raise PrintError(
+                    f"渲染 PDF 第 {side_order[0]} 页失败，未提交打印任务：{exc}") from exc
 
             doc_info = _DOCINFOW()
             doc_info.cbSize = ctypes.sizeof(_DOCINFOW)
@@ -919,6 +1066,8 @@ class GdiPrinter:
                 raise PrintError(f"创建打印任务失败：{_win_error_text()}")
             self.last_job_id = job_id
             job_started = True
+            _logger.info("已创建打印任务：printer=%s job_id=%s name=%s pages=%s",
+                         self.printer_name, job_id, job_name, len(side_order))
 
             total = len(side_order)
             for index, rel in enumerate(side_order, start=1):
@@ -930,15 +1079,20 @@ class GdiPrinter:
                     time.sleep(0.2)
 
                 page = doc[rel - 1]
-                try:
-                    raster = _rasterize(
-                        page, self.options.dpi, self.options.color_mode,
-                        ink_saver=getattr(self.options, "ink_saver", False),
-                        annots=getattr(self.options, "annots", True),
-                    )
-                except Exception as exc:
-                    raise PrintError(f"渲染 PDF 第 {rel} 页失败：{exc}") from exc
-                dest = _fit_rect(raster.width, raster.height, printable_w, printable_h)
+                if index == 1:
+                    raster = first_raster
+                else:
+                    try:
+                        raster = _rasterize(
+                            page, self.options.dpi, self.options.color_mode,
+                            ink_saver=getattr(self.options, "ink_saver", False),
+                            annots=getattr(self.options, "annots", True),
+                        )
+                    except Exception as exc:
+                        raise PrintError(f"渲染 PDF 第 {rel} 页失败：{exc}") from exc
+                dest = _paper_dest_rect(
+                    raster.width, raster.height, printable_w, printable_h,
+                    phys_w, phys_h, off_x, off_y)
 
                 bmi = _BITMAPINFOHEADER()
                 bmi.biSize = ctypes.sizeof(_BITMAPINFOHEADER)
@@ -957,11 +1111,13 @@ class GdiPrinter:
                     0, 0, raster.width, raster.height,
                     pixel_bits, ctypes.byref(bmi), BI_RGB, SRCCOPY,
                 )
-                if result < 0:
+                if result <= 0:
                     raise PrintError(f"绘制页面失败：{_win_error_text()}")
                 if _gdi32.EndPage(hdc) <= 0:
                     raise PrintError(f"结束打印页失败：{_win_error_text()}")
                 self.pages_sent += 1
+                _logger.info("已提交打印页：printer=%s job_id=%s page=%s/%s",
+                             self.printer_name, job_id, index, total)
 
                 if on_page:
                     on_page(index, total, rel)
@@ -969,8 +1125,18 @@ class GdiPrinter:
             if _gdi32.EndDoc(hdc) <= 0:
                 raise PrintError(f"提交打印任务失败：{_win_error_text()}")
             job_started = False
+            _logger.info("已提交打印任务：printer=%s job_id=%s pages=%s",
+                         self.printer_name, job_id, self.pages_sent)
             return job_id
-        except BaseException:
+        except BaseException as exc:
+            if isinstance(exc, CancelledByUser):
+                _logger.info("打印任务被用户取消：printer=%s job_id=%s pages_sent=%s",
+                             self.printer_name, job_id, self.pages_sent)
+            else:
+                _logger.exception(
+                    "打印任务执行异常：printer=%s job_id=%s pages_sent=%s",
+                    self.printer_name, job_id, self.pages_sent,
+                )
             if job_started and hdc:
                 try:
                     _gdi32.AbortDoc(hdc)

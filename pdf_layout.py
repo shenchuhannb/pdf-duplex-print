@@ -43,7 +43,7 @@ PAPER_CODES = {
     CUSTOM_PAPER_NAME: 256,   # DMPAPER_USER
 }
 
-NUP_CHOICES = (1, 2, 4, 6, 9, 16)
+NUP_CHOICES = (1, 2, 4, 6, 8, 9, 16)
 SCALE_MODES = ("fit", "shrink", "actual", "custom", "paper")
 ORIENTATIONS = ("auto", "portrait", "landscape")
 RANGE_MODES = ("all", "current", "custom", "odd", "even", "recent")
@@ -492,8 +492,10 @@ def paper_size_pt(options: LayoutOptions, first_page_landscape: bool = False) ->
     return width_pt, height_pt
 
 
-def nup_grid(nup: int) -> Tuple[int, int]:
-    """每张多页的网格（列, 行）。"""
+def nup_grid(nup: int, landscape: bool = True) -> Tuple[int, int]:
+    """每张多页的网格（列, 行）；八合一随纸张方向转置。"""
+    if int(nup) == 8:
+        return (4, 2) if landscape else (2, 4)
     return {
         1: (1, 1), 2: (2, 1), 4: (2, 2), 6: (3, 2), 9: (3, 3), 16: (4, 4),
     }.get(int(nup), (1, 1))
@@ -511,7 +513,7 @@ def slot_rects(
     槽位间距 gap 用于 N-up 分隔；四周使用用户设置的页边距。
     排列顺序：row = 从左到右、从上到下；column = 从上到下、从左到右。
     """
-    cols, rows = nup_grid(nup)
+    cols, rows = nup_grid(nup, landscape=paper_w >= paper_h)
     left, top, right, bottom = options.effective_margins_pt()
     gap = mm_to_pt(gap_mm)
     usable_w = max(1.0, paper_w - left - right - gap * (cols - 1))
@@ -640,6 +642,8 @@ def preview_metrics(
     slot = slots[0] if slots else fitz.Rect(left, top, paper_w - right, paper_h - bottom)
 
     src = fitz.Rect(0, 0, max(1.0, page_w), max(1.0, page_h))
+    if options.auto_rotate and (src.width > src.height) != (slot.width > slot.height):
+        src = fitz.Rect(0, 0, src.height, src.width)
     desired = compute_desired_rect(src, slot, options.scale_mode, options.scale_percent)
     percent = 0.0
     if src.width > 0:
@@ -656,6 +660,45 @@ def preview_metrics(
         "centered": True,
         "printable": printable,
     }
+
+
+def side_scale_percents(
+    plan: "LayoutPlan",
+    options: LayoutOptions,
+    size_for_rel,
+) -> List[Tuple[float, bool]]:
+    """每个输出面的（实际缩放百分比, 是否溢出裁切），按该面首个内容页尺寸计算。
+
+    缩放是逐页按源页尺寸计算的（与 Acrobat“适合”一致），不是整批固定值：
+    混合 A4/Letter/小页面时每个输出面的比例都不同，预览翻页应跟着变。
+    size_for_rel(rel) 返回该相对页号源页的 (宽, 高)，单位点。
+    槽位间距与 compose_layout_pdf 保持一致（N-up 2mm，小册子 0）。
+    """
+    nup = 2 if plan.booklet else max(1, int(plan.nup))
+    gap = 0.0 if plan.booklet else 2.0
+    slots = slot_rects(plan.paper_pt[0], plan.paper_pt[1], nup, options, gap_mm=gap)
+    slot = slots[0]
+    result: List[Tuple[float, bool]] = []
+    for entries in plan.sides:
+        rel = next((r for r in entries
+                    if r is not None and 1 <= r <= plan.total_selected), None)
+        if rel is None:
+            result.append((0.0, False))
+            continue
+        try:
+            width, height = size_for_rel(rel)
+        except Exception:
+            result.append((0.0, False))
+            continue
+        src = fitz.Rect(0, 0, max(1.0, width), max(1.0, height))
+        if options.auto_rotate and (src.width > src.height) != (slot.width > slot.height):
+            src = fitz.Rect(0, 0, src.height, src.width)
+        desired = compute_desired_rect(src, slot, options.scale_mode, options.scale_percent)
+        percent = 100.0 * desired.width / src.width if src.width > 0 else 0.0
+        overflow = (desired.width > slot.width + 0.01
+                    or desired.height > slot.height + 0.01)
+        result.append((percent, overflow))
+    return result
 
 
 # ----------------------------------------------------------------------------
@@ -792,6 +835,19 @@ def build_layout_plan(
         output_blank_added=output_blank,
         manual_duplex=bool(options.manual_duplex),
     )
+
+
+def content_side_numbers(plan: LayoutPlan) -> List[int]:
+    """返回含有真实源页的输出面编号（1 基）。
+
+    双面/N-up 补页（rel > total_selected）与空槽位（None）都不算内容。
+    用于识别“只有 1 面内容”的场景：此时无需翻面，也不应打印空白配对面。
+    """
+    result = []
+    for side_no, entries in enumerate(plan.sides, start=1):
+        if any(rel is not None and rel <= plan.total_selected for rel in entries):
+            result.append(side_no)
+    return result
 
 
 def describe_plan(plan: LayoutPlan) -> str:

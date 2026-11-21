@@ -558,25 +558,28 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         metric_defs = (("files", "文件"), ("pages", "选取页"),
                        ("sheets", "预计张数"), ("flips", "翻面次数"))
         for index, (key, caption) in enumerate(metric_defs):
-            if index:
-                tk.Frame(metrics, background=c["border"], width=1).grid(
-                    row=0, column=index * 2 - 1, sticky="ns")
+            column = index * 2 + 1
+            tk.Frame(metrics, background=c["border"], width=1).grid(
+                row=0, column=column - 1, sticky="ns")
             cell = tk.Frame(metrics, background=c["surface_alt"],
                             width=self._px(112), height=1)
-            cell.grid(row=0, column=index * 2, sticky="ns")
+            cell.grid(row=0, column=column, sticky="ns")
             cell.grid_propagate(False)
             inner = tk.Frame(cell, background=c["surface_alt"])
             inner.place(relx=0.5, rely=0.5, anchor="center")
             value_label = tk.Label(inner, textvariable=self.metric_vars[key],
                                    background=c["surface_alt"], foreground=c["accent"],
-                                   font=_theme.FONT_NUM, anchor="center")
+                                   font=_theme.FONT_NUM, anchor="center",
+                                   padx=0, pady=0)
             value_label.pack()
             caption_label = tk.Label(inner, text=caption, background=c["surface_alt"],
                                      foreground=c["muted"], font=_theme.FONT_SMALL,
-                                     anchor="center")
-            caption_label.pack()
+                                     anchor="center", padx=0, pady=0)
+            caption_label.pack(pady=(self._px(3), 0))
             self.metric_chips[key] = {"frame": cell, "value": value_label,
                                       "caption": caption_label}
+        tk.Frame(metrics, background=c["border"], width=1).grid(
+            row=0, column=len(metric_defs) * 2, sticky="ns")
 
         status = tk.Frame(header, background=c["header_bg"])
         status.grid(row=0, column=3, rowspan=2, sticky="e",

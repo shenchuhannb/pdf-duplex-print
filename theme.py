@@ -26,7 +26,7 @@ FONT_BODY = (FONT_FAMILY, 9)
 FONT_SMALL = (FONT_FAMILY, 8)
 # 数字专用字体：Segoe UI 的拉丁数字为等宽数字（tabular），用于顶部指标徽标，
 # 保证文件数/页数/张数在不同宽度变化时竖直方向仍然对齐。
-FONT_NUM = ("Segoe UI", 13, "bold")
+FONT_NUM = ("Segoe UI", 14, "bold")
 
 # 间距规范（两档：4px 细间距 / 8px 常规间距；卡片间距另用 12px）
 GAP_S = 4

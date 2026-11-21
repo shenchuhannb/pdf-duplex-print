@@ -1,6 +1,6 @@
 # Qcoder 项目交接
 
-更新时间：2026-11-21
+更新时间：2026-11-22
 
 ## 1. 当前状态
 
@@ -8,6 +8,7 @@
 - 当前分支：`fix/p1007-offline-wedge-qcoder`
 - 远端：`https://github.com/shenchuhannb/pdf-duplex-print.git`
 - 最新代码修复：`fa6a663 fix: 只读下拉框选中后不再显示深色选区（qcoder）`，已推送；修复选择打印机或缩放方式后字段整块变深的问题。
+- 2026-11-22 已将工作树回退到 2026-11-21 21:35（`961f851`）。日志分隔条快速拖动的残影属于已知症状；症状记录、已排除方向、根因判断和后续可选方案见 `docs/LOG_DRAG_SYMPTOM_ANALYSIS.md`。相关试验提交保留在历史中，未创建 PR。
 - 不创建 Pull Request。
 - 交接文档随下一次文档提交推送；最新提交以 `git log -3 --oneline` 为准。
 - 当前完整测试基线：`123 passed`。

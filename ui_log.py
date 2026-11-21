@@ -51,6 +51,7 @@ from window_geometry import (
     choose_geometry, format_geometry, list_work_areas,
 )
 import theme as _theme
+import win32_flicker
 from app_identity import apply_window_icon
 
 
@@ -89,6 +90,11 @@ class LogPanelMixin:
         最新一条摘要）→ 日志正文。高度按像素固定（默认 ≈6 行），拖动分隔条
         在最小值与窗口 1/3 之间调整；窗口变高时自动按比例增高，但不挤压
         工作区（工作区所在行仍是唯一 weight=1 的伸缩行）。
+
+        拖动分隔条时只移动一条指示线，松手后才应用高度：Windows 下内部
+        拖动只产生局部脏区，Tk 来不及逐帧完整重绘，文件列表空状态和日志
+        标题会残留旧像素、日志框会追赶鼠标抖动；窗口边框缩放是系统整窗
+        失效所以正常。这里采用 Tk 经典 PanedWindow 的 opaqueresize=0 策略。
         """
         c = self.colors
         self._log_min_height = self._px(134)
@@ -96,9 +102,7 @@ class LogPanelMixin:
         self._log_user_sized = False
         self._log_drag = None
         self._log_drag_active = False
-        self._log_height_after = None
         self._log_pending_height = None
-        self._log_last_apply = 0.0
         self._log_settle_after = None
         self.log_drawer_open = True
 
@@ -200,46 +204,53 @@ class LogPanelMixin:
         scroll.grid(row=0, column=2, sticky="ns")
         self.log_text.configure(yscrollcommand=scroll.set)
 
+        # 拖动只移动这条线，任何布局都不动，从根上避免拖动过程中的残影。
+        self.log_drag_line = tk.Frame(parent, background=c["accent"],
+                                      height=max(2, self._px(2)),
+                                      highlightthickness=0)
+        self.log_drag_line.place_forget()
+
     # ---------------------------------------------------------- 日志高度与详情
     def _on_log_sash_press(self, event) -> None:
-        self._flush_log_height()
-        self._cancel_log_settle()
-        self._log_drag = (event.y_root, self._log_height)
+        # 上一次松手的排版还没落定时先补完，再开始新的拖动。
+        if self._log_settle_after is not None:
+            self._cancel_log_settle()
+            self._finish_log_resize()
+        self._log_drag = (event.y_root, self._log_height, self.log_sash.winfo_y())
         self._log_drag_active = True
-        self._log_pending_height = None
-        self._log_last_apply = time.monotonic()
-        self._relax_workspace_for_log_drag()
+        self._log_pending_height = self._log_height
+        try:
+            # 指示线可能远离 6px 分隔条，拖动期间保持缩放光标。
+            self.root.configure(cursor="sb_v_double_arrow")
+        except tk.TclError:
+            pass
+        self._show_log_drag_line(self._log_drag[2])
 
     def _on_log_sash_drag(self, event) -> None:
         if not self._log_drag:
             return
-        start_y, start_height = self._log_drag
-        self._log_pending_height = start_height - (event.y_root - start_y)
-        # 鼠标事件可达 125Hz：约每 16ms 应用一次（≈60fps）。时间闸门而不是
-        # 纯 after 定时器，避免快速拖动时计时器被窗口事件饿死、日志跟不动。
-        now = time.monotonic()
-        if now - self._log_last_apply >= 0.016:
-            self._log_last_apply = now
-            self._apply_pending_log_height()
-        elif self._log_height_after is None:
-            self._log_height_after = self.root.after(
-                16, self._apply_pending_log_height)
+        start_y, start_height, start_top = self._log_drag
+        height = self._clamp_log_height(start_height - (event.y_root - start_y))
+        self._log_pending_height = height
+        self._position_log_drag_line(start_top - (height - start_height))
 
-    def _apply_pending_log_height(self) -> None:
-        if self._log_height_after is not None:
-            try:
-                self.root.after_cancel(self._log_height_after)
-            except tk.TclError:
-                pass
-            self._log_height_after = None
-        value = self._log_pending_height
-        self._log_pending_height = None
-        if value is not None:
-            self._log_last_apply = time.monotonic()
-            self._set_log_height(value)
+    def _show_log_drag_line(self, y: int) -> None:
+        self._position_log_drag_line(y)
+        try:
+            self.log_drag_line.lift()
+        except tk.TclError:
+            pass
 
-    def _flush_log_height(self) -> None:
-        self._apply_pending_log_height()
+    def _position_log_drag_line(self, y: int) -> None:
+        try:
+            parent = self.log_drag_line.master
+            line_h = self.log_drag_line.winfo_reqheight()
+            max_y = max(0, parent.winfo_height() - line_h)
+            self.log_drag_line.place(x=self.log_sash.winfo_x(),
+                                     y=max(0, min(int(y), max_y)),
+                                     width=self.log_sash.winfo_width())
+        except tk.TclError:
+            pass
 
     def _cancel_log_settle(self) -> None:
         if self._log_settle_after is not None:
@@ -250,30 +261,47 @@ class LogPanelMixin:
             self._log_settle_after = None
 
     def _on_log_sash_release(self, event=None) -> None:
-        self._flush_log_height()
-        self._log_user_sized = True
+        if not getattr(self, "_log_drag_active", False):
+            return
+        target = self._log_pending_height
+        if target is None:
+            target = self._log_height
         self._log_drag = None
-        self._log_drag_active = False
-        # 拖动期间冻结随高度变化的排版，松手后一次性落定，避免阈值反复切换。
+        self._log_pending_height = None
+        try:
+            self.log_drag_line.place_forget()
+            self.root.configure(cursor="")
+        except tk.TclError:
+            pass
+        self._log_user_sized = True
+        # 先放开工作区内容的最小高度，再一次性落到目标高度。
+        self._relax_workspace_for_log_drag()
+        self._set_log_height(target)
         self._cancel_log_settle()
         self._log_settle_after = self.root.after_idle(self._finish_log_resize)
 
     def _finish_log_resize(self) -> None:
         self._log_settle_after = None
         if getattr(self, "shutting_down", False):
+            self._log_drag_active = False
             return
         try:
             self.root.update_idletasks()
         except tk.TclError:
+            self._log_drag_active = False
             return
+        # 先把新高度对应的排版跑完（期间 Configure 仍被冻结跳过），
+        # 再解除冻结并一次性补齐密度、预览和信息条，避免阈值反复切换。
+        self._log_drag_active = False
         self._sync_file_panel_density()
         self._sync_workspace_density()
         self._sync_preview_info_visibility()
         self._on_preview_frame_configure()
         self._on_preview_canvas_configure()
+        win32_flicker.invalidate_tree(self.root)
 
     def _relax_workspace_for_log_drag(self) -> None:
-        """拖动期间放开工作区内容的最小高度，让收缩连续、不触发布局阈值。"""
+        """应用日志高度前放开工作区内容的最小高度，让收缩连续、不被卡住。"""
         try:
             if self.layout_scheme == "split" and hasattr(self, "_split_left"):
                 floor = self._px(96)
@@ -287,14 +315,17 @@ class LogPanelMixin:
         except tk.TclError:
             pass
 
-    def _set_log_height(self, value: int) -> None:
+    def _clamp_log_height(self, value: int) -> int:
         """把日志高度夹在“最小值 … 窗口 1/3”之间。"""
         try:
             window_h = max(1, self.root.winfo_height())
         except tk.TclError:
             window_h = self._log_min_height * 3
         limit = max(self._log_min_height, window_h // 3)
-        height = int(max(self._log_min_height, min(int(value), limit)))
+        return int(max(self._log_min_height, min(int(value), limit)))
+
+    def _set_log_height(self, value: int) -> None:
+        height = self._clamp_log_height(value)
         if height == self._log_height:
             return
         self._log_height = height

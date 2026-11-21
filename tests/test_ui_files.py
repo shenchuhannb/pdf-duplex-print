@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 import ui_files
+import ui_log
 
 
 class ConversionHarness(ui_files.FilesPanelMixin):
@@ -298,9 +299,14 @@ def test_log_drag_defers_density_and_preview_until_release(tmp_path, monkeypatch
             setattr(app, name, wrapped)
 
         baseline = app._log_height
+        invalidations = []
+        monkeypatch.setattr(ui_log.win32_flicker, "invalidate_tree",
+                            lambda _win: invalidations.append(_win))
         app._on_log_sash_press(SimpleNamespace(y_root=600))
+        line_positions = [int(app.log_drag_line.place_info()["y"])]
         for offset in (20, 60, 120):
             app._on_log_sash_drag(SimpleNamespace(y_root=600 - offset))
+            line_positions.append(int(app.log_drag_line.place_info()["y"]))
             app._on_workspace_configure(SimpleNamespace(widget=app.workspace))
             app._on_preview_canvas_configure(SimpleNamespace(
                 width=app.preview_canvas.winfo_width(),
@@ -309,6 +315,9 @@ def test_log_drag_defers_density_and_preview_until_release(tmp_path, monkeypatch
         assert app._log_drag_active is True
         assert app._log_height == baseline
         assert syncs == {"density": 0, "workspace": 0, "draw": 0}
+        assert invalidations == []
+        assert app.log_drag_line.place_info()
+        assert line_positions == sorted(line_positions, reverse=True)
 
         app._on_log_sash_release(SimpleNamespace())
         root.update()
@@ -317,6 +326,8 @@ def test_log_drag_defers_density_and_preview_until_release(tmp_path, monkeypatch
         assert app._log_height > baseline
         assert syncs["density"] >= 1
         assert syncs["workspace"] >= 1
+        assert not app.log_drag_line.place_info()
+        assert len(invalidations) >= 1
     finally:
         app.shutting_down = True
         root.destroy()

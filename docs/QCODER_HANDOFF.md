@@ -7,10 +7,10 @@
 - 项目目录：`D:\Qcoder\打印机软件\pdf-duplex-print`
 - 当前分支：`fix/p1007-offline-wedge-qcoder`
 - 远端：`https://github.com/shenchuhannb/pdf-duplex-print.git`
-- 最新代码修复：`1af15f6 fix: 日志拖动时不再露出半行表格文字（qcoder）`，已推送；上一修复为 `c60762e`。
+- 最新代码修复：`519a3be fix: 日志快速拖动时表格按整行裁切并合并刷新（qcoder）`；上一提交为 `8d1343e`。
 - 不创建 Pull Request。
-- 交接文档随下一次文档提交推送；最新提交以 `git log -3 --oneline` 为准。
-- 当前完整测试基线：`124 passed`。
+- 最新提交以 `git log -3 --oneline` 为准。
+- 当前完整测试基线：`125 passed`。
 - 有一个名称显示为 `\340\261\260\355\230\207\307\211` 的未知未跟踪文件。不要读取、删除、修改或提交它。
 
 后续接续先运行 `git status --short`、`git log -3 --oneline`，再针对具体反馈阅读对应模块。不要重新进行全项目审计。
@@ -44,7 +44,8 @@ cd /d D:\Qcoder\打印机软件\pdf-duplex-print
 
 - `ui_main.py`：监听工作区自身的 `<Configure>`，不再只依赖根窗口尺寸变化；按实际工作区高度调整左右分栏行高和预览画布最小高度。
 - `ui_files.py`：上下布局的工作区过矮时，暂时隐藏“最近使用”和空状态次要说明，把空间留给文件行；拖回后自动恢复。
-- `tests/test_ui_files.py`：新增日志分隔条拖动回归。
+- `ui_log.py`：日志拖动高度按 8ms 合并刷新，释放分隔条时一次性落定。
+- `tests/test_ui_files.py`：新增日志分隔条拖动、整行裁切与快速拖动合并回归。
 
 覆盖 `stacked`、`split`，以及 100%、150% 两档缩放。测试将日志从最小高度拖到窗口约三分之一，再拖回，断言：
 
@@ -61,16 +62,18 @@ cd /d D:\Qcoder\打印机软件\pdf-duplex-print
 
 极端高度下预览会变小，这是用户主动放大日志后的正常降级；不得再通过固定最小高度把预览挤到日志后面。
 
-### 3.1 列表半行文字（1af15f6）
+### 3.1 列表整行裁切与快速拖动（519a3be）
 
-单独拖动日志栏时，文件表高度逐像素变化，Treeview 会把最后一行截成不完整高度，文字在拖动过程中被切开。修复不改打印逻辑，也不改 Treeview 的 `height`：
+旧方案用同色遮罩盖住半行，但快速拖动时遮罩更新滞后，会变成盖住文字的白块，已完全移除。现方案：
 
-- 在文件表 frame 上监听 `<Configure>`，按实际可用高度计算 `(可用高度 - 表头开销) % 行高` 的余数；
-- 余数大于 0 时，用一个与表格同宽、同底色的兄弟 Frame 盖住底部不完整行的可见区域，滚动条不受影响；
-- 没有文件、显示空状态或高度恰好是整行倍数时自动隐藏遮罩；
-- `_refresh_file_rows()` 后同步重算，布局切换、缩放和日志拖动保持一致。
+- Treeview 放进由 `place` 定义尺寸的 `tree_holder`，高度量化为“表头开销 + 整行数”，多出的像素只由父容器在整行边界裁掉；
+- `_fit_tree_visible_rows()` 同时把 Treeview 的 `height` 同步为行数，避免 grid 长期保留过期像素高度；
+- 日志高度变化通过单个 `root.after(8, ...)` 合并，释放分隔条时 flush，快速拖动不会排队大量布局；
+- `_sync_file_panel_density()` 与 `_sync_workspace_density()` 只在状态真正变化时重排，不再每个像素重建按钮位置。
 
-回归测试 `test_log_drag_keeps_tree_rows_fully_visible` 覆盖 `stacked`/`split` 与 100%/150%，以 7px 步进拖动日志栏，断言遮罩的 x/y/宽/高始终对齐完整行边界，并确认遮罩确实出现。不要改回通过 `tree.configure(height=...)` 对齐行数，Tk 的 grid 分配缓存会导致向下缩小时失效。
+Tk 的 grid 偶尔会晚一轮把 Treeview 缩到新高度；此时多出的整行位于定尺容器之外、被整体裁掉，不会出现半行文字。透明 `PrintWindow` 截图确认：拖动 63px 时 3 整行，105px 时 1 整行，无遮罩、无半行。
+
+回归测试 `test_log_drag_keeps_tree_rows_fully_visible` 覆盖 `stacked`/`split` 与 100%/150%，断言容器尺寸等于整行量化值、裁切线在行边界；`test_fast_log_drag_coalesces_height_updates` 断言连续 B1-Motion 期间不立即应用高度、释放时只应用一次。
 
 ## 4. 默认手动双面约定
 
@@ -90,7 +93,7 @@ cd /d D:\Qcoder\打印机软件\pdf-duplex-print
 
 | 提交 | 内容 |
 |---|---|
-| `1af15f6` | 日志拖动时文件表只显示完整行，半行区域用同色遮罩覆盖 |
+| `519a3be` | 日志快速拖动：表格按整行裁切、去掉滞后遮罩、高度合并刷新 |
 | `c60762e` | 日志栏拖动时工作区、文件列表和预览的动态降级 |
 | `9a0b151` | DOCX 字体表中的未使用字体不再造成缺失误报 |
 | `21ad77f` | 窗口拉伸时提示文字、按钮间距和换行 |
@@ -117,11 +120,11 @@ cd /d D:\Qcoder\打印机软件\pdf-duplex-print
 
 ```bat
 .venv\Scripts\python.exe -m pytest -q
-.venv\Scripts\python.exe -m py_compile ui_main.py ui_files.py tests\test_ui_files.py
+.venv\Scripts\python.exe -m py_compile ui_main.py ui_files.py ui_log.py tests\test_ui_files.py
 git diff --check
 ```
 
-2026-11-21 验证结果：`124 passed`，上述语法和格式检查通过。真实纸张输出不在该结论范围内。
+2026-11-21 验证结果：`125 passed`（连续 8 轮全量通过），上述语法和格式检查通过。真实纸张输出不在该结论范围内。
 
 ## 7. 真实打印边界与后续事项
 

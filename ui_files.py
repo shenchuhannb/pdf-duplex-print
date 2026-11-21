@@ -145,14 +145,25 @@ class FilesPanelMixin:
         # 危险操作靠右、与主操作分离（“清空”不再和“移除”相邻）
         self.clear_btn.grid(row=0, column=5, sticky="e")
 
+        c = self.colors
         tree_frame = ttk.Frame(frame)
         tree_frame.grid(row=3, column=0, sticky="nsew")
         tree_frame.rowconfigure(0, weight=1)
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.bind("<Configure>", self._on_tree_frame_configure)
+        self.tree_frame = tree_frame
+
+        # 表格放进可按整行高度定尺的容器：视口只落在完整行边界，
+        # 不依赖遮罩覆盖，快速拖动时也不会出现盖住文字的色块。
+        holder = tk.Frame(tree_frame, background=c["surface"],
+                          borderwidth=0, highlightthickness=0, height=1)
+        holder.place(x=0, y=0, relwidth=1, height=1)
+        holder.rowconfigure(0, weight=1)
+        holder.columnconfigure(0, weight=1)
+        self.tree_holder = holder
 
         self.tree = ttk.Treeview(
-            tree_frame,
+            holder,
             columns=("name", "pages", "scope", "plan", "status"),
             show="headings",
             height=8,
@@ -171,15 +182,14 @@ class FilesPanelMixin:
                              anchor=anchor, stretch=(key == "name"))
         self._init_tree_tags()
         self.tree.grid(row=0, column=0, sticky="nsew")
-        scroll = ttk.Scrollbar(tree_frame, orient="vertical", style="Thin.Vertical.TScrollbar",
+        scroll = ttk.Scrollbar(holder, orient="vertical", style="Thin.Vertical.TScrollbar",
                                command=self.tree.yview)
         scroll.grid(row=0, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=scroll.set)
         self.tree_scroll = scroll
         # 空列表引导：旧版无文件时表格是一片空白，新用户不知道可以拖入/点按钮。
-        # 与 Treeview 共用同一个 grid 单元格，空列表时隐藏表格、显示引导；
+        # 与表格共用同一个单元格，空列表时隐藏表格、显示引导；
         # 有文件时切换回来，既不占额外高度，也不产生控件重叠。
-        c = self.colors
         self.empty_state = tk.Frame(tree_frame, background=c["surface"])
         self.empty_state.grid(row=0, column=0, sticky="nsew")
         box = tk.Frame(self.empty_state, background=c["surface"])
@@ -215,9 +225,6 @@ class FilesPanelMixin:
             box, text="Office 文档与图片会先转换为 PDF，原文件不会被修改",
             background=c["surface"], foreground=c["muted"], font=_theme.FONT_SMALL)
         self.empty_detail_label.pack(pady=(self._px(GAP_S), 0))
-        tree_bg = ttk.Style(self.root).lookup("Treeview", "background") or c["surface"]
-        self.tree_partial_mask = tk.Frame(tree_frame, background=tree_bg,
-                                          borderwidth=0, highlightthickness=0)
         self._update_empty_state()
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree.bind("<Double-1>", self._on_tree_double_click)
@@ -306,6 +313,10 @@ class FilesPanelMixin:
         short_stacked = (self.layout_scheme == "stacked"
                          and 1 < workspace_height < self._px(260))
         short_panel = short_split or short_stacked
+        state = (compact, short_panel)
+        if state == getattr(self, "_file_panel_density_state", None):
+            return
+        self._file_panel_density_state = state
         if compact:
             self.scope_hint_label.grid_remove()
             self.sel_info_label.grid_remove()
@@ -361,43 +372,34 @@ class FilesPanelMixin:
         self._fit_tree_visible_rows()
 
     def _on_tree_frame_configure(self, event) -> None:
-        if getattr(event, "widget", None) is self.tree.master:
+        if getattr(event, "widget", None) is getattr(self, "tree_frame", None):
             self._fit_tree_visible_rows(event.height)
 
     def _fit_tree_visible_rows(self, available: int = 0) -> None:
-        """末尾不足一整行的部分用同色遮罩盖住，拖动时不再露出半行文字。"""
-        if not hasattr(self, "tree_scroll"):
-            return
-        mask = getattr(self, "tree_partial_mask", None)
-        if mask is None:
+        """按整行高度定尺表格视口，末尾不保留半行文字。"""
+        holder = getattr(self, "tree_holder", None)
+        if holder is None:
             return
         try:
             if not available:
-                available = self.tree.master.winfo_height()
+                available = self.tree_frame.winfo_height()
             row_height = int(ttk.Style(self.root).lookup("Treeview", "rowheight") or 0)
             overhead = (self.tree.winfo_reqheight()
                         - int(self.tree.cget("height")) * row_height)
-            mapped = self.tree.winfo_ismapped()
-            tree_x = self.tree.winfo_x()
-            tree_width = self.tree.winfo_width()
         except (tk.TclError, ValueError):
             return
-        partial = 0
-        if (mapped and available > 1 and row_height > 0 and tree_width > 1
-                and self.tree.get_children("")):
-            partial = max(0, available - overhead) % row_height
-        if partial <= 0:
-            if getattr(self, "_tree_mask_key", None) is not None:
-                mask.place_forget()
-                self._tree_mask_key = None
+        if available <= 1 or row_height <= 0:
             return
-        key = (partial, available - partial, tree_x, tree_width)
-        if key == getattr(self, "_tree_mask_key", None):
+        rows = max(0, (available - overhead) // row_height)
+        height = min(available, max(1, overhead + rows * row_height))
+        if rows != int(self.tree.cget("height")):
+            # grid 不会把子控件缩到请求尺寸以下，只会在父容器里裁掉多出的像素；
+            # 请求高度同步成整行数，缩短时表格才会真正跟随容器变矮。
+            self.tree.configure(height=rows)
+        if height == getattr(self, "_tree_holder_height", None):
             return
-        self._tree_mask_key = key
-        mask.place(x=tree_x, y=available - partial,
-                   width=tree_width, height=partial)
-        mask.lift()
+        self._tree_holder_height = height
+        holder.place_configure(height=height)
 
     def _fit_tree_columns(self) -> None:
         """按实际内容自适应列宽，并保证所有列宽之和 ≤ 可视宽度（不横向截断）。
@@ -1569,10 +1571,6 @@ class FilesPanelMixin:
             frame.grid()
             if scroll is not None:
                 scroll.grid_remove()
-            mask = getattr(self, "tree_partial_mask", None)
-            if mask is not None:
-                mask.place_forget()
-                self._tree_mask_key = None
 
     def _refresh_file_rows(self) -> None:
         if hasattr(self, "file_count_var"):

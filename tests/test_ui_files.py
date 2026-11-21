@@ -163,11 +163,12 @@ def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, u
 
         app._on_log_sash_press(SimpleNamespace(y_root=600))
         app._on_log_sash_drag(SimpleNamespace(y_root=-1000))
+        app._on_log_sash_release(SimpleNamespace())
         root.update()
 
         assert app._log_height > app._log_min_height
         assert app._log_height <= root.winfo_height() // 3
-        tree_area = app.tree.master
+        tree_area = app.tree_frame
         assert tree_area.winfo_height() >= app._px(54)
         assert app.preview_canvas.winfo_height() >= app._px(48)
         for child in (tree_area, app.preview_canvas):
@@ -180,6 +181,7 @@ def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, u
 
         app._on_log_sash_press(SimpleNamespace(y_root=100))
         app._on_log_sash_drag(SimpleNamespace(y_root=1200))
+        app._on_log_sash_release(SimpleNamespace())
         root.update()
         assert app._log_height == app._log_min_height
         if scheme == "stacked":
@@ -230,28 +232,76 @@ def test_log_drag_keeps_tree_rows_fully_visible(tmp_path, monkeypatch, scheme, u
                 setattr(app, attr, None)
         app._fit_tree_visible_rows()
 
+        holder = app.tree_holder
+        frame = app.tree_frame
+        assert holder.winfo_manager() == "place"
+        assert not hasattr(app, "tree_partial_mask")
+
         app._on_log_sash_press(SimpleNamespace(y_root=600))
-        mask = app.tree_partial_mask
-        saw_mask = False
+        heights = set()
         for offset in range(0, 141, 7):
             app._on_log_sash_drag(SimpleNamespace(y_root=600 - offset))
+            app._flush_log_height()
+            # 高度改动会再排一次网格布局，空转一轮让表格跟到定尺容器尺寸。
             root.update()
-            frame_height = app.tree.master.winfo_height()
+            root.update_idletasks()
+            frame_height = frame.winfo_height()
             row_height = int(ttk.Style(root).lookup("Treeview", "rowheight"))
             overhead = (app.tree.winfo_reqheight()
                         - int(app.tree.cget("height")) * row_height)
-            partial = max(0, frame_height - overhead) % row_height
-            if partial:
-                assert mask.winfo_ismapped()
-                assert mask.winfo_height() == partial
-                assert mask.winfo_y() + partial == frame_height
-                assert mask.winfo_x() == app.tree.winfo_x()
-                assert mask.winfo_width() == app.tree.winfo_width()
-                assert (frame_height - overhead - partial) % row_height == 0
-                saw_mask = True
-            else:
-                assert not mask.winfo_ismapped()
-        assert saw_mask
+            rows = max(0, (frame_height - overhead) // row_height)
+            expected = min(frame_height, max(1, overhead + rows * row_height))
+            assert holder.winfo_height() == expected
+            assert holder.winfo_x() == 0
+            assert holder.winfo_y() == 0
+            assert holder.winfo_width() == frame.winfo_width()
+            # Tk 的 grid 会保留子控件上一轮的像素高度、由父容器裁掉多出的部分；
+            # 只要裁切线落在整行边界，就不会露出半行文字（树晚一轮追上也无碍）。
+            assert holder.winfo_rooty() + holder.winfo_height() <= \
+                frame.winfo_rooty() + frame.winfo_height()
+            if holder.winfo_height() >= overhead > 0:
+                assert (holder.winfo_height() - overhead) % row_height == 0
+            heights.add(holder.winfo_height())
+        if scheme == "stacked":
+            assert len(heights) > 1
+    finally:
+        app.shutting_down = True
+        root.destroy()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
+def test_fast_log_drag_coalesces_height_updates(tmp_path, monkeypatch):
+    from ui_main import DuplexPrintApp, _create_root
+
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    root = _create_root()
+    root.withdraw()
+    root.tk.call("tk", "scaling", 1.3333)
+    app = DuplexPrintApp(root, layout_scheme="stacked", ui_scale_override=1.0)
+    app.preview_enabled = False
+    for attr in ("preview_after_id", "ui_poll_id", "printer_poll_id",
+                 "_live_refresh_id"):
+        poll_id = getattr(app, attr, None)
+        if poll_id is not None:
+            root.after_cancel(poll_id)
+            setattr(app, attr, None)
+    root.attributes("-alpha", 0.0)
+    root.deiconify()
+    try:
+        root.geometry("1024x720+40+40")
+        root.update()
+        applied = []
+        original = app._set_log_height
+        app._set_log_height = lambda value: (applied.append(value), original(value))
+
+        app._on_log_sash_press(SimpleNamespace(y_root=600))
+        for offset in range(0, 150, 2):
+            app._on_log_sash_drag(SimpleNamespace(y_root=600 - offset))
+        assert applied == []
+
+        app._on_log_sash_release(SimpleNamespace())
+        assert len(applied) == 1
+        assert app._log_height > app._log_min_height
     finally:
         app.shutting_down = True
         root.destroy()

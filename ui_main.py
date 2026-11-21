@@ -491,15 +491,20 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
             available = max(0, workspace_height - self._px(GAP_CARD))
             top_min = min(top_base, available)
             bottom_min = min(bottom_base, max(0, available - top_min))
-            self._split_left.rowconfigure(0, weight=top_weight, minsize=top_min)
-            self._split_left.rowconfigure(1, weight=bottom_weight, minsize=bottom_min)
+            split_key = (top_weight, top_min, bottom_weight, bottom_min)
+            if split_key != getattr(self, "_split_density_key", None):
+                self._split_density_key = split_key
+                self._split_left.rowconfigure(0, weight=top_weight, minsize=top_min)
+                self._split_left.rowconfigure(1, weight=bottom_weight, minsize=bottom_min)
             preview_budget = bottom_min
         canvas_min = self._px(120 if compact else 180)
         if workspace_height > 1:
             # 日志增高后窗口本身没变，最小画布也必须随实际工作区降级。
             canvas_min = max(self._px(48), min(
                 canvas_min, preview_budget - self._px(128)))
-        self.preview_frame.rowconfigure(2, minsize=canvas_min)
+        if canvas_min != getattr(self, "_preview_canvas_min", None):
+            self._preview_canvas_min = canvas_min
+            self.preview_frame.rowconfigure(2, minsize=canvas_min)
 
     def _build_header(self, parent: tk.Frame) -> None:
         """精简应用栏：产品、真实任务步骤、批次摘要和打印机状态。"""

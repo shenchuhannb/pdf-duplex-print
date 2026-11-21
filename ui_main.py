@@ -501,6 +501,25 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
                 canvas_min, preview_budget - self._px(128)))
         self.preview_frame.rowconfigure(2, minsize=canvas_min)
 
+    def _load_app_icon(self, size: int):
+        """界面标志与窗口/任务栏共用 app_icon.ico，保持品牌一致。"""
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_icon.ico")
+        try:
+            from PIL import Image, ImageTk
+            with Image.open(icon_path) as image:
+                ico = getattr(image, "ico", None)
+                sizes = sorted({side for side, _ in ico.sizes()}) if ico else [image.size[0]]
+                larger = [side for side in sizes if side >= size]
+                frame_size = min(larger) if larger else max(sizes)
+                image.size = (frame_size, frame_size)
+                frame = image.convert("RGBA")
+            if frame_size != size:
+                resample = getattr(Image, "Resampling", Image).LANCZOS
+                frame = frame.resize((size, size), resample)
+            return ImageTk.PhotoImage(frame, master=self.root)
+        except Exception:
+            return None
+
     def _build_header(self, parent: tk.Frame) -> None:
         """精简应用栏：产品、真实任务步骤、批次摘要和打印机状态。"""
         c = self.colors
@@ -513,19 +532,25 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         self._header_full_height = self._px(76)
         self._header_compact_height = self._px(58)
 
-        mark = tk.Canvas(header, width=self._px(32), height=self._px(36),
-                         background=c["header_bg"], highlightthickness=0,
-                         borderwidth=0)
+        icon_photo = self._load_app_icon(self._px(32))
+        if icon_photo is not None:
+            self.header_icon_photo = icon_photo
+            mark = tk.Label(header, image=icon_photo, background=c["header_bg"],
+                            borderwidth=0, highlightthickness=0)
+        else:
+            mark = tk.Canvas(header, width=self._px(32), height=self._px(36),
+                             background=c["header_bg"], highlightthickness=0,
+                             borderwidth=0)
+            s = self.ui_scale
+            mark.create_rectangle(9*s, 3*s, 29*s, 29*s, fill=c["accent_soft"],
+                                  outline=c["accent"], width=max(1, int(s)))
+            mark.create_rectangle(3*s, 8*s, 23*s, 34*s, fill=c["accent"],
+                                  outline=c["accent"])
+            for y, width in ((16, 11), (22, 11), (28, 7)):
+                mark.create_line(8*s, y*s, (8+width)*s, y*s,
+                                 fill=c["accent_text"], width=max(1, int(s)))
         mark.grid(row=0, column=0, rowspan=2, padx=(self._px(14), self._px(10)),
                   pady=self._px(10))
-        s = self.ui_scale
-        mark.create_rectangle(9*s, 3*s, 29*s, 29*s, fill=c["accent_soft"],
-                              outline=c["accent"], width=max(1, int(s)))
-        mark.create_rectangle(3*s, 8*s, 23*s, 34*s, fill=c["accent"],
-                              outline=c["accent"])
-        for y, width in ((16, 11), (22, 11), (28, 7)):
-            mark.create_line(8*s, y*s, (8+width)*s, y*s,
-                             fill=c["accent_text"], width=max(1, int(s)))
 
         self.header_title_label = tk.Label(
             header, text="PDF 批量双面打印", background=c["header_bg"],

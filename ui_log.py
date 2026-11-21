@@ -95,8 +95,6 @@ class LogPanelMixin:
         self._log_height = self._log_min_height
         self._log_user_sized = False
         self._log_drag = None
-        self._log_height_after = None
-        self._log_pending_height = None
         self.log_drawer_open = True
 
         sash = tk.Frame(parent, background=c["bg"], height=self._px(6),
@@ -104,7 +102,7 @@ class LogPanelMixin:
         sash.grid(row=4, column=0, sticky="ew", pady=(self._px(GAP_S), 0))
         sash.bind("<Button-1>", self._on_log_sash_press)
         sash.bind("<B1-Motion>", self._on_log_sash_drag)
-        sash.bind("<ButtonRelease-1>", self._on_log_sash_release)
+        sash.bind("<ButtonRelease-1>", lambda _e: setattr(self, "_log_user_sized", True))
         self.log_sash = sash
         grip = tk.Frame(sash, background=c["border_strong"], width=self._px(42),
                         height=self._px(2))
@@ -112,7 +110,8 @@ class LogPanelMixin:
         for widget in (sash, grip):
             widget.bind("<Button-1>", self._on_log_sash_press)
             widget.bind("<B1-Motion>", self._on_log_sash_drag)
-            widget.bind("<ButtonRelease-1>", self._on_log_sash_release)
+            widget.bind("<ButtonRelease-1>",
+                        lambda _e: setattr(self, "_log_user_sized", True))
 
         drawer = tk.Frame(parent, background=c["surface"], highlightthickness=1,
                           highlightbackground=c["border"], height=self._log_height)
@@ -199,37 +198,13 @@ class LogPanelMixin:
 
     # ---------------------------------------------------------- 日志高度与详情
     def _on_log_sash_press(self, event) -> None:
-        self._flush_log_height()
         self._log_drag = (event.y_root, self._log_height)
 
     def _on_log_sash_drag(self, event) -> None:
         if not self._log_drag:
             return
         start_y, start_height = self._log_drag
-        self._log_pending_height = start_height - (event.y_root - start_y)
-        if self._log_height_after is None:
-            self._log_height_after = self.root.after(
-                8, self._apply_pending_log_height)
-
-    def _apply_pending_log_height(self) -> None:
-        self._log_height_after = None
-        value = self._log_pending_height
-        self._log_pending_height = None
-        if value is not None:
-            self._set_log_height(value)
-
-    def _flush_log_height(self) -> None:
-        if self._log_height_after is not None:
-            try:
-                self.root.after_cancel(self._log_height_after)
-            except tk.TclError:
-                pass
-            self._log_height_after = None
-        self._apply_pending_log_height()
-
-    def _on_log_sash_release(self, event=None) -> None:
-        self._flush_log_height()
-        self._log_user_sized = True
+        self._set_log_height(start_height - (event.y_root - start_y))
 
     def _set_log_height(self, value: int) -> None:
         """把日志高度夹在“最小值 … 窗口 1/3”之间。"""

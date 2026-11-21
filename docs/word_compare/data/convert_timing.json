@@ -1,0 +1,568 @@
+{
+  "A_single": {
+    "07_header_footer": [
+      {
+        "seconds": 9.286850500007858,
+        "info": {
+          "converter": "Word",
+          "pages": 5,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 9.300450899987482,
+        "info": {
+          "converter": "Word",
+          "pages": 5,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.0454013000126,
+        "info": {
+          "converter": "Word",
+          "pages": 5,
+          "font_check": "checked"
+        }
+      }
+    ],
+    "01_mixed_short": [
+      {
+        "seconds": 9.309147699997993,
+        "info": {
+          "converter": "Word",
+          "pages": 1,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.656531800021185,
+        "info": {
+          "converter": "Word",
+          "pages": 1,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 9.11620680001215,
+        "info": {
+          "converter": "Word",
+          "pages": 1,
+          "font_check": "checked"
+        }
+      }
+    ],
+    "02_chinese_pure": [
+      {
+        "seconds": 8.779499700001907,
+        "info": {
+          "converter": "Word",
+          "pages": 2,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.628167699993355,
+        "info": {
+          "converter": "Word",
+          "pages": 2,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.001067900011549,
+        "info": {
+          "converter": "Word",
+          "pages": 2,
+          "font_check": "checked"
+        }
+      }
+    ],
+    "03_english_pure": [
+      {
+        "seconds": 9.159507300006226,
+        "info": {
+          "converter": "Word",
+          "pages": 6,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 7.583207499992568,
+        "info": {
+          "converter": "Word",
+          "pages": 6,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.038235299987718,
+        "info": {
+          "converter": "Word",
+          "pages": 6,
+          "font_check": "checked"
+        }
+      }
+    ],
+    "04_table": [
+      {
+        "seconds": 9.678766800003359,
+        "info": {
+          "converter": "Word",
+          "pages": 4,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.646100399986608,
+        "info": {
+          "converter": "Word",
+          "pages": 4,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.364988699991954,
+        "info": {
+          "converter": "Word",
+          "pages": 4,
+          "font_check": "checked"
+        }
+      }
+    ],
+    "05_image": [
+      {
+        "seconds": 8.905729100020835,
+        "info": {
+          "converter": "Word",
+          "pages": 2,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.604646199994022,
+        "info": {
+          "converter": "Word",
+          "pages": 2,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.777404000022216,
+        "info": {
+          "converter": "Word",
+          "pages": 2,
+          "font_check": "checked"
+        }
+      }
+    ],
+    "06_formula": [
+      {
+        "seconds": 7.490831900009653,
+        "info": {
+          "converter": "Word",
+          "pages": 1,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.718823100003647,
+        "info": {
+          "converter": "Word",
+          "pages": 1,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 9.00732770000468,
+        "info": {
+          "converter": "Word",
+          "pages": 1,
+          "font_check": "checked"
+        }
+      }
+    ],
+    "08_legacy": [
+      {
+        "seconds": 8.877195300010499,
+        "info": {
+          "converter": "Word",
+          "pages": 2,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.664494399999967,
+        "info": {
+          "converter": "Word",
+          "pages": 2,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 8.88475650001783,
+        "info": {
+          "converter": "Word",
+          "pages": 2,
+          "font_check": "checked"
+        }
+      }
+    ],
+    "09_missing_font": [
+      {
+        "seconds": 8.851823099976173,
+        "info": {
+          "converter": "Word",
+          "pages": 1,
+          "font_check": "checked",
+          "missing_fonts": [
+            "NoSuchFontABC"
+          ]
+        }
+      },
+      {
+        "seconds": 8.798721899976954,
+        "info": {
+          "converter": "Word",
+          "pages": 1,
+          "font_check": "checked",
+          "missing_fonts": [
+            "NoSuchFontABC"
+          ]
+        }
+      },
+      {
+        "seconds": 8.847885499999393,
+        "info": {
+          "converter": "Word",
+          "pages": 1,
+          "font_check": "checked",
+          "missing_fonts": [
+            "NoSuchFontABC"
+          ]
+        }
+      }
+    ],
+    "10_long_35p": [
+      {
+        "seconds": 11.375877999991644,
+        "info": {
+          "converter": "Word",
+          "pages": 35,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 9.914551199995913,
+        "info": {
+          "converter": "Word",
+          "pages": 35,
+          "font_check": "checked"
+        }
+      },
+      {
+        "seconds": 11.331251800002065,
+        "info": {
+          "converter": "Word",
+          "pages": 35,
+          "font_check": "checked"
+        }
+      }
+    ]
+  },
+  "A_batch": {
+    "runs": [
+      {
+        "rep": 0,
+        "total": 16.68037010001717,
+        "ok": 10
+      },
+      {
+        "rep": 1,
+        "total": 17.648598800005857,
+        "ok": 10
+      },
+      {
+        "rep": 2,
+        "total": 15.92791510000825,
+        "ok": 10
+      }
+    ],
+    "per_file": {
+      "01_mixed_short": [
+        {
+          "seconds": 4.16,
+          "ok": true,
+          "pages": 1
+        },
+        {
+          "seconds": 4.16,
+          "ok": true,
+          "pages": 1
+        },
+        {
+          "seconds": 2.84,
+          "ok": true,
+          "pages": 1
+        }
+      ],
+      "02_chinese_pure": [
+        {
+          "seconds": 0.47,
+          "ok": true,
+          "pages": 2
+        },
+        {
+          "seconds": 0.58,
+          "ok": true,
+          "pages": 2
+        },
+        {
+          "seconds": 0.5,
+          "ok": true,
+          "pages": 2
+        }
+      ],
+      "03_english_pure": [
+        {
+          "seconds": 0.85,
+          "ok": true,
+          "pages": 6
+        },
+        {
+          "seconds": 0.93,
+          "ok": true,
+          "pages": 6
+        },
+        {
+          "seconds": 0.96,
+          "ok": true,
+          "pages": 6
+        }
+      ],
+      "04_table": [
+        {
+          "seconds": 1.29,
+          "ok": true,
+          "pages": 4
+        },
+        {
+          "seconds": 1.43,
+          "ok": true,
+          "pages": 4
+        },
+        {
+          "seconds": 1.39,
+          "ok": true,
+          "pages": 4
+        }
+      ],
+      "05_image": [
+        {
+          "seconds": 0.35,
+          "ok": true,
+          "pages": 2
+        },
+        {
+          "seconds": 0.42,
+          "ok": true,
+          "pages": 2
+        },
+        {
+          "seconds": 0.38,
+          "ok": true,
+          "pages": 2
+        }
+      ],
+      "06_formula": [
+        {
+          "seconds": 0.58,
+          "ok": true,
+          "pages": 1
+        },
+        {
+          "seconds": 0.48,
+          "ok": true,
+          "pages": 1
+        },
+        {
+          "seconds": 0.55,
+          "ok": true,
+          "pages": 1
+        }
+      ],
+      "07_header_footer": [
+        {
+          "seconds": 0.49,
+          "ok": true,
+          "pages": 5
+        },
+        {
+          "seconds": 0.56,
+          "ok": true,
+          "pages": 5
+        },
+        {
+          "seconds": 0.56,
+          "ok": true,
+          "pages": 5
+        }
+      ],
+      "08_legacy": [
+        {
+          "seconds": 0.63,
+          "ok": true,
+          "pages": 2
+        },
+        {
+          "seconds": 0.72,
+          "ok": true,
+          "pages": 2
+        },
+        {
+          "seconds": 0.59,
+          "ok": true,
+          "pages": 2
+        }
+      ],
+      "09_missing_font": [
+        {
+          "seconds": 0.69,
+          "ok": true,
+          "pages": 1
+        },
+        {
+          "seconds": 0.74,
+          "ok": true,
+          "pages": 1
+        },
+        {
+          "seconds": 0.74,
+          "ok": true,
+          "pages": 1
+        }
+      ],
+      "10_long_35p": [
+        {
+          "seconds": 3.63,
+          "ok": true,
+          "pages": 35
+        },
+        {
+          "seconds": 4.11,
+          "ok": true,
+          "pages": 35
+        },
+        {
+          "seconds": 4.01,
+          "ok": true,
+          "pages": 35
+        }
+      ]
+    }
+  },
+  "B_cold": {
+    "07_header_footer": [
+      1.4901092000072822,
+      1.55226140000741,
+      1.4763685000070836
+    ],
+    "01_mixed_short": [
+      1.4230963000154588,
+      1.4462766000069678,
+      1.484810699999798
+    ],
+    "02_chinese_pure": [
+      1.2485071000119206,
+      1.4499435000179801,
+      1.4955095000041183
+    ],
+    "03_english_pure": [
+      1.4974359000043478,
+      1.686930099996971,
+      1.8149555000127293
+    ],
+    "04_table": [
+      2.1360160000040196,
+      2.416070099978242,
+      2.1545363000186626
+    ],
+    "05_image": [
+      1.3661742999975104,
+      1.3530987000267487,
+      1.6201340999978129
+    ],
+    "06_formula": [
+      1.5734119999979157,
+      1.5358268000127282,
+      1.9788598000013735
+    ],
+    "08_legacy": [
+      1.4653996999841183,
+      1.496470700018108,
+      null
+    ],
+    "09_missing_font": [
+      1.7999419000116177,
+      1.8287939000001643,
+      1.8535740000079386
+    ],
+    "10_long_35p": [
+      5.116089299990563,
+      4.2551896999939345,
+      4.113919299998088
+    ]
+  },
+  "B_steady": {
+    "01_mixed_short": [
+      1.595253599982243,
+      0.41485450000618584,
+      0.4107330999977421
+    ],
+    "02_chinese_pure": [
+      0.4775196999835316,
+      0.475466999982018,
+      0.4726717000012286
+    ],
+    "03_english_pure": [
+      0.8128792999777943,
+      0.7921833000145853,
+      0.7210052000009455
+    ],
+    "04_table": [
+      1.3488101999973878,
+      1.379466999991564,
+      1.2852698999922723
+    ],
+    "05_image": [
+      0.3426366999919992,
+      0.41364520002389327,
+      0.3637227000144776
+    ],
+    "06_formula": [
+      0.4979087999963667,
+      0.49838490001275204,
+      0.4494166999938898
+    ],
+    "07_header_footer": [
+      0.5665222000097856,
+      0.4856212000013329,
+      0.5106520999979693
+    ],
+    "08_legacy": [
+      0.6239665999892168,
+      0.4633783000172116,
+      0.5067419999977574
+    ],
+    "09_missing_font": [
+      0.6996339000179432,
+      0.3217409999924712,
+      0.37794629999552853
+    ],
+    "10_long_35p": [
+      3.939005399995949,
+      3.924209399992833,
+      3.909938199998578
+    ]
+  }
+}

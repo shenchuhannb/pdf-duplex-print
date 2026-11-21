@@ -1,0 +1,1 @@
+缺失字体样本 NoSuchFontABC以下段落被显式设置为本机不存在的字体 NoSuchFontABC，用于验证字体回退。NoSuchFontABC 渲染：中文汉字与 Latin ABC 0123 都会经过字体替换。第二段同样使用 NoSuchFontABC：符号 ①②③ ∑ √ 与标点“引号”也要检查。结尾段落恢复宋体，作为对照。

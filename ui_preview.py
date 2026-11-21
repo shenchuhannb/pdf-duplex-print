@@ -87,6 +87,8 @@ _logger = logging.getLogger("pdf_duplex")
 
 class PreviewMixin:
     def _on_preview_frame_configure(self, event=None) -> None:
+        if getattr(self, "_log_drag_active", False):
+            return
         width = event.width if event is not None else self.preview_frame.winfo_width()
         if hasattr(self, "preview_info_label") and width > 1:
             if int(self.preview_info_label.cget("wraplength")) != width:
@@ -157,6 +159,8 @@ class PreviewMixin:
         ew，因此收敛后的画布在卡片内水平居中，1024 宽下不再是大扁条。
         收敛会再触发一次 Configure，此时宽度已匹配，只重绘不递归。
         """
+        if getattr(self, "_log_drag_active", False):
+            return
         if not self.shutting_down:
             try:
                 width = event.width if event is not None else self.preview_canvas.winfo_width()

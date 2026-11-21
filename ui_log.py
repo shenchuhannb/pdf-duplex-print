@@ -95,6 +95,11 @@ class LogPanelMixin:
         self._log_height = self._log_min_height
         self._log_user_sized = False
         self._log_drag = None
+        self._log_drag_active = False
+        self._log_height_after = None
+        self._log_pending_height = None
+        self._log_last_apply = 0.0
+        self._log_settle_after = None
         self.log_drawer_open = True
 
         sash = tk.Frame(parent, background=c["bg"], height=self._px(6),
@@ -102,7 +107,7 @@ class LogPanelMixin:
         sash.grid(row=4, column=0, sticky="ew", pady=(self._px(GAP_S), 0))
         sash.bind("<Button-1>", self._on_log_sash_press)
         sash.bind("<B1-Motion>", self._on_log_sash_drag)
-        sash.bind("<ButtonRelease-1>", lambda _e: setattr(self, "_log_user_sized", True))
+        sash.bind("<ButtonRelease-1>", self._on_log_sash_release)
         self.log_sash = sash
         grip = tk.Frame(sash, background=c["border_strong"], width=self._px(42),
                         height=self._px(2))
@@ -110,8 +115,7 @@ class LogPanelMixin:
         for widget in (sash, grip):
             widget.bind("<Button-1>", self._on_log_sash_press)
             widget.bind("<B1-Motion>", self._on_log_sash_drag)
-            widget.bind("<ButtonRelease-1>",
-                        lambda _e: setattr(self, "_log_user_sized", True))
+            widget.bind("<ButtonRelease-1>", self._on_log_sash_release)
 
         drawer = tk.Frame(parent, background=c["surface"], highlightthickness=1,
                           highlightbackground=c["border"], height=self._log_height)
@@ -198,13 +202,90 @@ class LogPanelMixin:
 
     # ---------------------------------------------------------- 日志高度与详情
     def _on_log_sash_press(self, event) -> None:
+        self._flush_log_height()
+        self._cancel_log_settle()
         self._log_drag = (event.y_root, self._log_height)
+        self._log_drag_active = True
+        self._log_pending_height = None
+        self._log_last_apply = time.monotonic()
+        self._relax_workspace_for_log_drag()
 
     def _on_log_sash_drag(self, event) -> None:
         if not self._log_drag:
             return
         start_y, start_height = self._log_drag
-        self._set_log_height(start_height - (event.y_root - start_y))
+        self._log_pending_height = start_height - (event.y_root - start_y)
+        # 鼠标事件可达 125Hz：约每 16ms 应用一次（≈60fps）。时间闸门而不是
+        # 纯 after 定时器，避免快速拖动时计时器被窗口事件饿死、日志跟不动。
+        now = time.monotonic()
+        if now - self._log_last_apply >= 0.016:
+            self._log_last_apply = now
+            self._apply_pending_log_height()
+        elif self._log_height_after is None:
+            self._log_height_after = self.root.after(
+                16, self._apply_pending_log_height)
+
+    def _apply_pending_log_height(self) -> None:
+        if self._log_height_after is not None:
+            try:
+                self.root.after_cancel(self._log_height_after)
+            except tk.TclError:
+                pass
+            self._log_height_after = None
+        value = self._log_pending_height
+        self._log_pending_height = None
+        if value is not None:
+            self._log_last_apply = time.monotonic()
+            self._set_log_height(value)
+
+    def _flush_log_height(self) -> None:
+        self._apply_pending_log_height()
+
+    def _cancel_log_settle(self) -> None:
+        if self._log_settle_after is not None:
+            try:
+                self.root.after_cancel(self._log_settle_after)
+            except tk.TclError:
+                pass
+            self._log_settle_after = None
+
+    def _on_log_sash_release(self, event=None) -> None:
+        self._flush_log_height()
+        self._log_user_sized = True
+        self._log_drag = None
+        self._log_drag_active = False
+        # 拖动期间冻结随高度变化的排版，松手后一次性落定，避免阈值反复切换。
+        self._cancel_log_settle()
+        self._log_settle_after = self.root.after_idle(self._finish_log_resize)
+
+    def _finish_log_resize(self) -> None:
+        self._log_settle_after = None
+        if getattr(self, "shutting_down", False):
+            return
+        try:
+            self.root.update_idletasks()
+        except tk.TclError:
+            return
+        self._sync_file_panel_density()
+        self._sync_workspace_density()
+        self._sync_preview_info_visibility()
+        self._on_preview_frame_configure()
+        self._on_preview_canvas_configure()
+
+    def _relax_workspace_for_log_drag(self) -> None:
+        """拖动期间放开工作区内容的最小高度，让收缩连续、不触发布局阈值。"""
+        try:
+            if self.layout_scheme == "split" and hasattr(self, "_split_left"):
+                floor = self._px(96)
+                self._split_left.rowconfigure(0, minsize=floor)
+                self._split_left.rowconfigure(1, minsize=floor)
+            elif hasattr(self, "preview_frame"):
+                self.preview_frame.rowconfigure(2, minsize=self._px(48))
+            # 松手后的密度同步必须无条件恢复这些最小高度。
+            self._split_density_key = None
+            self._preview_canvas_min = None
+        except tk.TclError:
+            pass
 
     def _set_log_height(self, value: int) -> None:
         """把日志高度夹在“最小值 … 窗口 1/3”之间。"""

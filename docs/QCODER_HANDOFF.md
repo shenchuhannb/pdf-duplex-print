@@ -7,7 +7,7 @@
 - 项目目录：`D:\Qcoder\打印机软件\pdf-duplex-print`
 - 当前分支：`fix/p1007-offline-wedge-qcoder`
 - 远端：`https://github.com/shenchuhannb/pdf-duplex-print.git`
-- 最新代码修复：`c1ea441 feat: 顶部批次指标改为分隔等宽统计格（qcoder）`，已推送；该提交基于回退后的 13:16 版本。
+- 最新代码修复：`93cab1d style: 打磨顶部批次指标格的分隔与数字层级（qcoder）`，已推送；该提交在 `c1ea441` 的等宽统计格基础上做视觉打磨。
 - 不创建 Pull Request。
 - 交接文档随下一次文档提交推送；最新提交以 `git log -3 --oneline` 为准。
 - 当前完整测试基线：`122 passed`。
@@ -79,6 +79,7 @@ cd /d D:\Qcoder\打印机软件\pdf-duplex-print
 
 | 提交 | 内容 |
 |---|---|
+| `93cab1d` | 指标格补齐左右收边、数字 14pt、数字与名称留 3px 呼吸位 |
 | `c1ea441` | 顶部四项批次指标改为浅灰底、细分隔的等宽统计格 |
 | `c60762e` | 日志栏拖动时工作区、文件列表和预览的动态降级 |
 | `9a0b151` | DOCX 字体表中的未使用字体不再造成缺失误报 |
@@ -87,7 +88,7 @@ cd /d D:\Qcoder\打印机软件\pdf-duplex-print
 | `c41f2f5` | Word 子进程使用 UTF-8 协议，修复中文字体名乱码 |
 | `b6f1073` | Tkinter/ttk 界面与响应式布局重构 |
 
-顶部指标栏不要再改回“本批 + 内联数字/文字”：当前为 4 个 `_px(112)` 等宽格，格间 1px 分隔，数字使用 `FONT_NUM` + 强调色，名称使用 `FONT_SMALL` + 辅助灰；表头完整高度 76、紧凑高度 58。`test_header_metrics_use_equal_cells_without_overlap` 覆盖 1024 宽与 150% 缩放，断言四格等宽、数字/名称完整、且不与右侧打印机状态重叠。
+顶部指标栏不要再改回“本批 + 内联数字/文字”：当前为 4 个 `_px(112)` 等宽格，整组左右各有 1px 收边线，格间 1px 分隔；数字使用 14pt `FONT_NUM` + 强调色，名称使用 `FONT_SMALL` + 辅助灰，数字与名称之间留 3px。表头完整高度 76、紧凑高度 58。`test_header_metrics_use_equal_cells_without_overlap` 覆盖 1024 宽与 150% 缩放，断言四格等宽、数字/名称完整、且不与右侧打印机状态重叠。
 
 此前还完成了 P1007 脱机预检、打印队列竞态与取消处理、单页文件跳过翻面、完成态和进度修复、后台切回黑块修复、逐源页缩放、四合一/八合一和横竖版入口。相关逻辑不要因 UI 调整被改写。
 

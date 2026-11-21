@@ -137,6 +137,56 @@ def test_resize_preserves_selection_text_and_button_spacing(tmp_path, monkeypatc
 
 
 @pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
+@pytest.mark.parametrize("ui_scale", (1.0, 1.5))
+def test_header_metrics_use_equal_cells_without_overlap(tmp_path, monkeypatch, ui_scale):
+    from ui_main import DuplexPrintApp, _create_root
+
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    root = _create_root()
+    root.withdraw()
+    root.tk.call("tk", "scaling", 1.3333 * ui_scale)
+    app = DuplexPrintApp(root, layout_scheme="stacked", ui_scale_override=ui_scale)
+    app.preview_enabled = False
+    for attr in ("preview_after_id", "ui_poll_id", "printer_poll_id",
+                 "_live_refresh_id"):
+        poll_id = getattr(app, attr, None)
+        if poll_id is not None:
+            root.after_cancel(poll_id)
+            setattr(app, attr, None)
+    root.attributes("-alpha", 0.0)
+    root.deiconify()
+    try:
+        root.geometry(f"{round(1024 * ui_scale)}x{round(720 * ui_scale)}+40+40")
+        root.update()
+        app._layout_header_compact()
+        root.update()
+
+        cells = [chip["frame"] for chip in app.metric_chips.values()]
+        assert len(cells) == 4
+        widths = {cell.winfo_width() for cell in cells}
+        assert len(widths) == 1 and widths.pop() >= app._px(104)
+
+        header = app.header_frame
+        metrics = app.header_metrics_frame
+        status = app.printer_status_label.master
+        assert metrics.winfo_rootx() + metrics.winfo_width() <= status.winfo_rootx()
+        for chip in app.metric_chips.values():
+            cell, value, caption = chip["frame"], chip["value"], chip["caption"]
+            assert value.winfo_ismapped() and caption.winfo_ismapped()
+            assert value.cget("foreground") == app.colors["accent"]
+            # 指标格会撑满标题与步骤两行，可能比定高表头略高；文字本身必须完整落在表头内。
+            assert value.winfo_rooty() >= header.winfo_rooty()
+            assert caption.winfo_rooty() + caption.winfo_height() <= \
+                header.winfo_rooty() + header.winfo_height()
+            assert value.winfo_rooty() + value.winfo_height() <= caption.winfo_rooty()
+            assert caption.winfo_rooty() + caption.winfo_height() <= \
+                cell.winfo_rooty() + cell.winfo_height()
+    finally:
+        app.shutting_down = True
+        root.destroy()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
 @pytest.mark.parametrize("scheme", ("stacked", "split"))
 @pytest.mark.parametrize("ui_scale", (1.0, 1.5))
 def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, ui_scale):

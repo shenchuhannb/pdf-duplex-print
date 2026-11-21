@@ -504,14 +504,14 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
     def _build_header(self, parent: tk.Frame) -> None:
         """精简应用栏：产品、真实任务步骤、批次摘要和打印机状态。"""
         c = self.colors
-        header = tk.Frame(parent, background=c["header_bg"], height=self._px(66),
+        header = tk.Frame(parent, background=c["header_bg"], height=self._px(76),
                           highlightthickness=1, highlightbackground=c["border"])
         header.grid(row=0, column=0, sticky="ew")
         header.grid_propagate(False)
         header.columnconfigure(1, weight=1)
         self.header_frame = header
-        self._header_full_height = self._px(66)
-        self._header_compact_height = self._px(54)
+        self._header_full_height = self._px(76)
+        self._header_compact_height = self._px(58)
 
         mark = tk.Canvas(header, width=self._px(32), height=self._px(36),
                          background=c["header_bg"], highlightthickness=0,
@@ -550,25 +550,32 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
         self.header_subtitle_label = steps
 
         metrics = tk.Frame(header, background=c["header_bg"])
-        metrics.grid(row=0, column=2, rowspan=2, sticky="e",
+        metrics.grid(row=0, column=2, rowspan=2, sticky="ns",
                      padx=(self._px(GAP), self._px(16)))
+        metrics.rowconfigure(0, weight=1)
         self.header_metrics_frame = metrics
         self.metric_chips: Dict[str, dict] = {}
         metric_defs = (("files", "文件"), ("pages", "选取页"),
                        ("sheets", "预计张数"), ("flips", "翻面次数"))
-        tk.Label(metrics, text="本批", background=c["header_bg"], foreground=c["muted"],
-                 font=_theme.FONT_SMALL).grid(row=0, column=0, padx=(0, self._px(GAP)))
-        for index, (key, caption) in enumerate(metric_defs, start=1):
-            group = tk.Frame(metrics, background=c["header_bg"])
-            group.grid(row=0, column=index, padx=(0, self._px(10)))
-            value_label = tk.Label(group, textvariable=self.metric_vars[key],
-                                   background=c["header_bg"], foreground=c["text"],
-                                   font=(_theme.FONT_FAMILY, 9, "bold"))
-            value_label.pack(side="left")
-            caption_label = tk.Label(group, text=caption, background=c["header_bg"],
-                                     foreground=c["muted"], font=_theme.FONT_SMALL)
-            caption_label.pack(side="left", padx=(self._px(3), 0))
-            self.metric_chips[key] = {"frame": group, "value": value_label,
+        for index, (key, caption) in enumerate(metric_defs):
+            if index:
+                tk.Frame(metrics, background=c["border"], width=1).grid(
+                    row=0, column=index * 2 - 1, sticky="ns")
+            cell = tk.Frame(metrics, background=c["surface_alt"],
+                            width=self._px(112), height=1)
+            cell.grid(row=0, column=index * 2, sticky="ns")
+            cell.grid_propagate(False)
+            inner = tk.Frame(cell, background=c["surface_alt"])
+            inner.place(relx=0.5, rely=0.5, anchor="center")
+            value_label = tk.Label(inner, textvariable=self.metric_vars[key],
+                                   background=c["surface_alt"], foreground=c["accent"],
+                                   font=_theme.FONT_NUM, anchor="center")
+            value_label.pack()
+            caption_label = tk.Label(inner, text=caption, background=c["surface_alt"],
+                                     foreground=c["muted"], font=_theme.FONT_SMALL,
+                                     anchor="center")
+            caption_label.pack()
+            self.metric_chips[key] = {"frame": cell, "value": value_label,
                                       "caption": caption_label}
 
         status = tk.Frame(header, background=c["header_bg"])

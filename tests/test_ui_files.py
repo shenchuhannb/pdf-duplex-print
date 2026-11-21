@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import pytest
 
 import ui_files
-import ui_log
 
 
 class ConversionHarness(ui_files.FilesPanelMixin):
@@ -233,7 +232,6 @@ def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, u
 
         app._on_log_sash_press(SimpleNamespace(y_root=600))
         app._on_log_sash_drag(SimpleNamespace(y_root=-1000))
-        app._on_log_sash_release(SimpleNamespace())
         root.update()
 
         assert app._log_height > app._log_min_height
@@ -251,93 +249,12 @@ def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, u
 
         app._on_log_sash_press(SimpleNamespace(y_root=100))
         app._on_log_sash_drag(SimpleNamespace(y_root=1200))
-        app._on_log_sash_release(SimpleNamespace())
         root.update()
         assert app._log_height == app._log_min_height
         if scheme == "stacked":
             assert app.recent_frame.winfo_ismapped()
         assert app.preview_frame.winfo_rooty() + app.preview_frame.winfo_height() <= \
             app.workspace.winfo_rooty() + app.workspace.winfo_height()
-    finally:
-        app.shutting_down = True
-        root.destroy()
-
-
-@pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
-@pytest.mark.parametrize("scheme", ("stacked", "split"))
-def test_log_drag_defers_density_and_preview_until_release(tmp_path, monkeypatch, scheme):
-    from ui_main import DuplexPrintApp, _create_root
-
-    monkeypatch.setenv("APPDATA", str(tmp_path))
-    root = _create_root()
-    root.withdraw()
-    root.tk.call("tk", "scaling", 1.3333)
-    app = DuplexPrintApp(root, layout_scheme=scheme, ui_scale_override=1.0)
-    app.preview_enabled = False
-    for attr in ("preview_after_id", "ui_poll_id", "printer_poll_id",
-                 "_live_refresh_id"):
-        poll_id = getattr(app, attr, None)
-        if poll_id is not None:
-            root.after_cancel(poll_id)
-            setattr(app, attr, None)
-    root.attributes("-alpha", 0.0)
-    root.deiconify()
-    try:
-        root.geometry("1024x720+40+40")
-        root.update()
-
-        syncs = {"density": 0, "workspace": 0, "draw": 0}
-        for name, key in (("_sync_file_panel_density", "density"),
-                          ("_sync_workspace_density", "workspace"),
-                          ("_draw_paper_preview", "draw")):
-            original = getattr(app, name)
-
-            def wrapped(*args, _original=original, _key=key, **_kwargs):
-                syncs[_key] += 1
-                return _original(*args, **_kwargs)
-
-            setattr(app, name, wrapped)
-
-        baseline = app._log_height
-        invalidations = []
-        monkeypatch.setattr(ui_log.win32_flicker, "invalidate_tree",
-                            lambda _win: invalidations.append(_win))
-        app._on_log_sash_press(SimpleNamespace(y_root=600))
-        line_positions = [int(app.log_drag_line.place_info()["y"])]
-        for offset in (20, 60, 120):
-            app._on_log_sash_drag(SimpleNamespace(y_root=600 - offset))
-            line_positions.append(int(app.log_drag_line.place_info()["y"]))
-            app._on_workspace_configure(SimpleNamespace(widget=app.workspace))
-            app._on_preview_canvas_configure(SimpleNamespace(
-                width=app.preview_canvas.winfo_width(),
-                height=app.preview_canvas.winfo_height()))
-
-        assert app._log_drag_active is True
-        assert app._log_height == baseline
-        assert syncs == {"density": 0, "workspace": 0, "draw": 0}
-        assert invalidations == []
-        assert app.log_drag_line.place_info()
-        assert line_positions == sorted(line_positions, reverse=True)
-
-        app._on_log_sash_release(SimpleNamespace())
-        root.update()
-
-        assert app._log_drag_active is False
-        assert app._log_height > baseline
-        assert syncs["density"] >= 1
-        assert syncs["workspace"] >= 1
-        assert not app.log_drag_line.place_info()
-        assert len(invalidations) >= 1
-
-        # 只点击分隔条、不改变高度：不触发排版和整树重绘。
-        before_click = len(invalidations)
-        app._on_log_sash_press(SimpleNamespace(y_root=600))
-        assert app._log_drag_active is True
-        app._on_log_sash_release(SimpleNamespace())
-        root.update()
-        assert app._log_drag_active is False
-        assert not app.log_drag_line.place_info()
-        assert len(invalidations) == before_click
     finally:
         app.shutting_down = True
         root.destroy()

@@ -16,35 +16,10 @@ import sys
 
 GWL_WNDPROC = -4
 WM_ERASEBKGND = 0x0014
-RDW_INVALIDATE = 0x0001
-RDW_ALLCHILDREN = 0x0080
 
 # hwnd -> (WNDPROC 回调, 原窗口过程, 底色画刷)；必须常驻引用防止回调被 GC。
 # 高级设置等对话框每次打开是新 hwnd，旧条目仅几百字节，保留不清理。
 _installed = {}
-
-
-def invalidate_tree(win) -> None:
-    """把窗口客户区和全部子控件标记为待重绘。
-
-    窗口边框缩放时 Windows 会对整个窗口做 WM_SIZE + 全窗失效，画面干净；
-    应用内分隔条只改嵌套容器尺寸，系统只按控件脏区增量重绘，快速拖动时
-    容易留下未失效的旧像素（文字被白块切断、边框跳动）。这里主动补一次
-    全树失效，让 Tk 下一轮绘制覆盖所有子窗口，成本只有一次窗口树遍历。
-    """
-    if sys.platform != "win32":
-        return
-    try:
-        user32 = ctypes.windll.user32
-        user32.RedrawWindow.restype = ctypes.c_int
-        user32.RedrawWindow.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
-                                        ctypes.c_void_p, ctypes.c_uint]
-        hwnd = int(win.winfo_id())
-        if hwnd:
-            user32.RedrawWindow(ctypes.c_void_p(hwnd), None, None,
-                                RDW_INVALIDATE | RDW_ALLCHILDREN)
-    except Exception:
-        pass
 
 
 def install_erase_background(win, background: str) -> None:

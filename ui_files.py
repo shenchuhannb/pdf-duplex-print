@@ -302,11 +302,6 @@ class FilesPanelMixin:
         short_stacked = (self.layout_scheme == "stacked"
                          and 1 < workspace_height < self._px(260))
         short_panel = short_split or short_stacked
-        # 每个像素都重排按钮会闪；只有密度状态真正变化时才应用。
-        density_key = (compact, short_panel)
-        if density_key == getattr(self, "_file_panel_density_key", None):
-            return
-        self._file_panel_density_key = density_key
         if compact:
             self.scope_hint_label.grid_remove()
             self.sel_info_label.grid_remove()

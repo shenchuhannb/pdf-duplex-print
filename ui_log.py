@@ -51,7 +51,6 @@ from window_geometry import (
     choose_geometry, format_geometry, list_work_areas,
 )
 import theme as _theme
-import win32_flicker
 from app_identity import apply_window_icon
 
 
@@ -90,20 +89,12 @@ class LogPanelMixin:
         最新一条摘要）→ 日志正文。高度按像素固定（默认 ≈6 行），拖动分隔条
         在最小值与窗口 1/3 之间调整；窗口变高时自动按比例增高，但不挤压
         工作区（工作区所在行仍是唯一 weight=1 的伸缩行）。
-
-        拖动分隔条时只移动一个居中的浮动小手柄，松手后才应用高度：Windows 下内部
-        拖动只产生局部脏区，Tk 来不及逐帧完整重绘，文件列表空状态和日志
-        标题会残留旧像素、日志框会追赶鼠标抖动；窗口边框缩放是系统整窗
-        失效所以正常。这里采用 Tk 经典 PanedWindow 的 opaqueresize=0 策略。
         """
         c = self.colors
         self._log_min_height = self._px(134)
         self._log_height = self._log_min_height
         self._log_user_sized = False
         self._log_drag = None
-        self._log_drag_active = False
-        self._log_pending_height = None
-        self._log_settle_after = None
         self.log_drawer_open = True
 
         sash = tk.Frame(parent, background=c["bg"], height=self._px(6),
@@ -111,7 +102,7 @@ class LogPanelMixin:
         sash.grid(row=4, column=0, sticky="ew", pady=(self._px(GAP_S), 0))
         sash.bind("<Button-1>", self._on_log_sash_press)
         sash.bind("<B1-Motion>", self._on_log_sash_drag)
-        sash.bind("<ButtonRelease-1>", self._on_log_sash_release)
+        sash.bind("<ButtonRelease-1>", lambda _e: setattr(self, "_log_user_sized", True))
         self.log_sash = sash
         grip = tk.Frame(sash, background=c["border_strong"], width=self._px(42),
                         height=self._px(2))
@@ -119,7 +110,8 @@ class LogPanelMixin:
         for widget in (sash, grip):
             widget.bind("<Button-1>", self._on_log_sash_press)
             widget.bind("<B1-Motion>", self._on_log_sash_drag)
-            widget.bind("<ButtonRelease-1>", self._on_log_sash_release)
+            widget.bind("<ButtonRelease-1>",
+                        lambda _e: setattr(self, "_log_user_sized", True))
 
         drawer = tk.Frame(parent, background=c["surface"], highlightthickness=1,
                           highlightbackground=c["border"], height=self._log_height)
@@ -204,140 +196,24 @@ class LogPanelMixin:
         scroll.grid(row=0, column=2, sticky="ns")
         self.log_text.configure(yscrollcommand=scroll.set)
 
-        # 拖动只移动这个小手柄，任何布局都不动，从根上避免拖动过程中的残影。
-        # 白底 + 强调色细描边 + 约 2px 握把，沿用分隔条的语言，不横贯整窗。
-        self.log_drag_line = tk.Frame(parent, background=c["surface"],
-                                      highlightthickness=1,
-                                      highlightbackground=c["accent"],
-                                      height=self._px(10), width=self._px(56))
-        tk.Frame(self.log_drag_line, background=c["accent"],
-                 width=self._px(28), height=max(2, self._px(2))).place(
-            relx=0.5, rely=0.5, anchor="center")
-        self.log_drag_line.place_forget()
-
     # ---------------------------------------------------------- 日志高度与详情
     def _on_log_sash_press(self, event) -> None:
-        # 上一次松手的排版还没落定时先补完，再开始新的拖动。
-        if self._log_settle_after is not None:
-            self._cancel_log_settle()
-            self._finish_log_resize()
-        self._log_drag = (event.y_root, self._log_height,
-                          self.log_sash.winfo_y() + self.log_sash.winfo_height() // 2)
-        self._log_drag_active = True
-        self._log_pending_height = self._log_height
-        try:
-            # 指示线可能远离 6px 分隔条，拖动期间保持缩放光标。
-            self.root.configure(cursor="sb_v_double_arrow")
-        except tk.TclError:
-            pass
-        self._show_log_drag_line(self._log_drag[2])
+        self._log_drag = (event.y_root, self._log_height)
 
     def _on_log_sash_drag(self, event) -> None:
         if not self._log_drag:
             return
-        start_y, start_height, start_center = self._log_drag
-        height = self._clamp_log_height(start_height - (event.y_root - start_y))
-        self._log_pending_height = height
-        self._position_log_drag_line(start_center - (height - start_height))
+        start_y, start_height = self._log_drag
+        self._set_log_height(start_height - (event.y_root - start_y))
 
-    def _show_log_drag_line(self, center_y: int) -> None:
-        self._position_log_drag_line(center_y)
-        try:
-            self.log_drag_line.lift()
-        except tk.TclError:
-            pass
-
-    def _position_log_drag_line(self, center_y: int) -> None:
-        try:
-            parent = self.log_drag_line.master
-            width, line_h = self._px(56), self._px(10)
-            max_y = max(0, parent.winfo_height() - line_h)
-            sash_w = self.log_sash.winfo_width()
-            self.log_drag_line.place(
-                x=self.log_sash.winfo_x() + max(0, (sash_w - width) // 2),
-                y=max(0, min(int(center_y) - line_h // 2, max_y)),
-                width=width, height=line_h)
-        except tk.TclError:
-            pass
-
-    def _cancel_log_settle(self) -> None:
-        if self._log_settle_after is not None:
-            try:
-                self.root.after_cancel(self._log_settle_after)
-            except tk.TclError:
-                pass
-            self._log_settle_after = None
-
-    def _on_log_sash_release(self, event=None) -> None:
-        if not getattr(self, "_log_drag_active", False):
-            return
-        target = self._log_pending_height
-        if target is None:
-            target = self._log_height
-        self._log_drag = None
-        self._log_pending_height = None
-        try:
-            self.log_drag_line.place_forget()
-            self.root.configure(cursor="")
-        except tk.TclError:
-            pass
-        self._log_user_sized = True
-        if target == self._log_height:
-            # 只点了一下没有改变高度：不做任何排版与整树重绘。
-            self._log_drag_active = False
-            return
-        # 先放开工作区内容的最小高度，再一次性落到目标高度。
-        self._relax_workspace_for_log_drag()
-        self._set_log_height(target)
-        self._cancel_log_settle()
-        self._log_settle_after = self.root.after_idle(self._finish_log_resize)
-
-    def _finish_log_resize(self) -> None:
-        self._log_settle_after = None
-        if getattr(self, "shutting_down", False):
-            self._log_drag_active = False
-            return
-        try:
-            self.root.update_idletasks()
-        except tk.TclError:
-            self._log_drag_active = False
-            return
-        # 先把新高度对应的排版跑完（期间 Configure 仍被冻结跳过），
-        # 再解除冻结并一次性补齐密度、预览和信息条，避免阈值反复切换。
-        self._log_drag_active = False
-        self._sync_file_panel_density()
-        self._sync_workspace_density()
-        self._sync_preview_info_visibility()
-        self._on_preview_frame_configure()
-        self._on_preview_canvas_configure()
-        win32_flicker.invalidate_tree(self.root)
-
-    def _relax_workspace_for_log_drag(self) -> None:
-        """应用日志高度前放开工作区内容的最小高度，让收缩连续、不被卡住。"""
-        try:
-            if self.layout_scheme == "split" and hasattr(self, "_split_left"):
-                floor = self._px(96)
-                self._split_left.rowconfigure(0, minsize=floor)
-                self._split_left.rowconfigure(1, minsize=floor)
-            elif hasattr(self, "preview_frame"):
-                self.preview_frame.rowconfigure(2, minsize=self._px(48))
-            # 松手后的密度同步必须无条件恢复这些最小高度。
-            self._split_density_key = None
-            self._preview_canvas_min = None
-        except tk.TclError:
-            pass
-
-    def _clamp_log_height(self, value: int) -> int:
+    def _set_log_height(self, value: int) -> None:
         """把日志高度夹在“最小值 … 窗口 1/3”之间。"""
         try:
             window_h = max(1, self.root.winfo_height())
         except tk.TclError:
             window_h = self._log_min_height * 3
         limit = max(self._log_min_height, window_h // 3)
-        return int(max(self._log_min_height, min(int(value), limit)))
-
-    def _set_log_height(self, value: int) -> None:
-        height = self._clamp_log_height(value)
+        height = int(max(self._log_min_height, min(int(value), limit)))
         if height == self._log_height:
             return
         self._log_height = height

@@ -328,6 +328,16 @@ def test_log_drag_defers_density_and_preview_until_release(tmp_path, monkeypatch
         assert syncs["workspace"] >= 1
         assert not app.log_drag_line.place_info()
         assert len(invalidations) >= 1
+
+        # 只点击分隔条、不改变高度：不触发排版和整树重绘。
+        before_click = len(invalidations)
+        app._on_log_sash_press(SimpleNamespace(y_root=600))
+        assert app._log_drag_active is True
+        app._on_log_sash_release(SimpleNamespace())
+        root.update()
+        assert app._log_drag_active is False
+        assert not app.log_drag_line.place_info()
+        assert len(invalidations) == before_click
     finally:
         app.shutting_down = True
         root.destroy()

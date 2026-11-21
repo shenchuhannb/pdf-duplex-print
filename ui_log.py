@@ -274,6 +274,10 @@ class LogPanelMixin:
         except tk.TclError:
             pass
         self._log_user_sized = True
+        if target == self._log_height:
+            # 只点了一下没有改变高度：不做任何排版与整树重绘。
+            self._log_drag_active = False
+            return
         # 先放开工作区内容的最小高度，再一次性落到目标高度。
         self._relax_workspace_for_log_drag()
         self._set_log_height(target)

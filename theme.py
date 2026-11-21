@@ -334,6 +334,10 @@ def apply_theme(root: tk.Tk, style_key: str = "") -> Dict[str, str]:
               darkcolor=[("focus", colors["accent"])],
               fieldbackground=[("disabled", colors["disabled_bg"])],
               foreground=[("disabled", colors["disabled_text"])])
+    # 下拉框选完后 Tk 会把整段文字保持为“全选”态；默认系统深色选区会盖住
+    # 白底字段，看起来像控件背景突然变深。只读下拉框无需这种选区提示。
+    _safe(st, "TCombobox", selectbackground=colors["input_bg"],
+          selectforeground=colors["text"])
     # 校验失败态：仅换描边颜色（不增加边框厚度），配合下方预留错误行使用
     _safe(st, "Error.TEntry", fieldbackground=colors["input_bg"], foreground=colors["text"],
           bordercolor=colors["danger"], lightcolor=colors["danger"],
@@ -351,6 +355,8 @@ def apply_theme(root: tk.Tk, style_key: str = "") -> Dict[str, str]:
                                ("disabled", colors["disabled_bg"])],
               foreground=[("readonly", colors["text"]), ("disabled", colors["disabled_text"]),
                           ("active", colors["text"])],
+              selectbackground=[("readonly", colors["input_bg"])],
+              selectforeground=[("readonly", colors["text"])],
               arrowcolor=[("active", colors["accent"])])
     _safe_map(st, "TSpinbox",
               bordercolor=[("focus", colors["accent"])],

@@ -186,6 +186,25 @@ def test_header_metrics_use_equal_cells_without_overlap(tmp_path, monkeypatch, u
         root.destroy()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Tk 主题查询仅在 Windows 桌面运行")
+def test_combobox_selection_uses_field_background():
+    from tkinter import ttk
+
+    import theme
+    from ui_main import _create_root
+
+    root = _create_root()
+    root.withdraw()
+    try:
+        colors = theme.apply_theme(root)
+        style = ttk.Style(root)
+        states = ("focus", "readonly")
+        assert str(style.lookup("TCombobox", "selectbackground", states)) == colors["input_bg"]
+        assert str(style.lookup("TCombobox", "selectforeground", states)) == colors["text"]
+    finally:
+        root.destroy()
+
+
 @pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
 @pytest.mark.parametrize("scheme", ("stacked", "split"))
 @pytest.mark.parametrize("ui_scale", (1.0, 1.5))

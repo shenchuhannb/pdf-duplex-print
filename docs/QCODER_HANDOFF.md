@@ -7,7 +7,7 @@
 - 项目目录：`D:\Qcoder\打印机软件\pdf-duplex-print`
 - 当前分支：`fix/p1007-offline-wedge-qcoder`
 - 远端：`https://github.com/shenchuhannb/pdf-duplex-print.git`
-- 最新代码修复：`d5e1447 fix: 日志拖动改为指示线预览并在松手后一次性排版（qcoder）`，已推送；日志分隔条改为拖动指示线、松手落定，消除快速拖动时的残影与日志框抖动。
+- 最新代码修复：`f09ba7a fix: 点击日志分隔条但不改变高度时跳过排版与整树重绘（qcoder）`，已推送；接续 `d5e1447` 的指示线拖动，纯点击不再触发任何排版或整树重绘。
 - 不创建 Pull Request。
 - 交接文档随下一次文档提交推送；最新提交以 `git log -3 --oneline` 为准。
 - 当前完整测试基线：`125 passed`。
@@ -45,11 +45,11 @@ cd /d D:\Qcoder\打印机软件\pdf-duplex-print
 现实现（`d5e1447`）：采用 Tk 经典 PanedWindow 的 `opaqueresize=0` 策略，拖动期间不做任何布局。
 
 - `ui_log.py`：按下分隔条时显示一条全宽强调色指示线（`log_drag_line`）；拖动只 `place` 这条线，日志高度、文件区密度、预览画布全部不动，因此拖动过程中没有会产生残影的重绘。松手时隐藏指示线，一次性落到目标高度，`after_idle` 调 `_finish_log_resize()` 解除冻结并同步一次密度/预览。
-- 高度仍夹在 `_px(134)` 与窗口 1/3 之间；指示线位置按夹取后的高度计算，拖到极限时线停住，不会越界。点击分隔条但不拖动不改高度。
+- 高度仍夹在 `_px(134)` 与窗口 1/3 之间；指示线位置按夹取后的高度计算，拖到极限时线停住，不会越界。点击分隔条但不改变高度时直接返回，不做排版也不做整树重绘。
 - 拖动期间根窗口光标保持 `sb_v_double_arrow`，指针离开 6px 分隔条后仍有反馈。
 - `_finish_log_resize()` 末尾调用 `win32_flicker.invalidate_tree()`（`RedrawWindow(RDW_INVALIDATE | RDW_ALLCHILDREN)`），松手后的单次排版整树重绘，与窗口边框缩放一致；拖动中不再有任何全树失效。
 - 连续拖动或在落定前再次按下：先补完上一次松手的排版，再开始新拖动。
-- `tests/test_ui_files.py`：`test_log_drag_defers_density_and_preview_until_release` 断言拖动中高度不变、密度/预览/整树失效均为 0、指示线可见且随拖动单调上移；松手后高度落定、指示线消失、排版与整树失效各至少一次。
+- `tests/test_ui_files.py`：`test_log_drag_defers_density_and_preview_until_release` 断言拖动中高度不变、密度/预览/整树失效均为 0、指示线可见且随拖动单调上移；松手后高度落定、指示线消失、排版与整树失效各至少一次；纯点击后高度与整树失效计数都不变。
 
 覆盖 `stacked`、`split`，以及 100%、150% 两档缩放。原有拖动回归继续断言：
 

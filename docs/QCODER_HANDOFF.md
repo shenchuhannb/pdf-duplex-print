@@ -7,10 +7,10 @@
 - 项目目录：`D:\Qcoder\打印机软件\pdf-duplex-print`
 - 当前分支：`fix/p1007-offline-wedge-qcoder`
 - 远端：`https://github.com/shenchuhannb/pdf-duplex-print.git`
-- 最新代码修复：`e69a5ae style: 标题栏标志改用 app_icon.ico（qcoder）`，已推送；标题栏标志与窗口/任务栏/快捷方式共用同一份 `app_icon.ico`。
+- 最新代码修复：`fa6a663 fix: 只读下拉框选中后不再显示深色选区（qcoder）`，已推送；修复选择打印机或缩放方式后字段整块变深的问题。
 - 不创建 Pull Request。
 - 交接文档随下一次文档提交推送；最新提交以 `git log -3 --oneline` 为准。
-- 当前完整测试基线：`122 passed`。
+- 当前完整测试基线：`123 passed`。
 - 有一个名称显示为 `\340\261\260\355\230\207\307\211` 的未知未跟踪文件。不要读取、删除、修改或提交它。
 
 后续接续先运行 `git status --short`、`git log -3 --oneline`，再针对具体反馈阅读对应模块。不要重新进行全项目审计。
@@ -79,6 +79,7 @@ cd /d D:\Qcoder\打印机软件\pdf-duplex-print
 
 | 提交 | 内容 |
 |---|---|
+| `fa6a663` | 只读下拉框的选区底色改为字段底色，选择后不再出现深色块 |
 | `e69a5ae` | 标题栏左侧标志改为读取 `app_icon.ico`，与应用/任务栏图标统一 |
 | `93cab1d` | 指标格补齐左右收边、数字 14pt、数字与名称留 3px 呼吸位 |
 | `c1ea441` | 顶部四项批次指标改为浅灰底、细分隔的等宽统计格 |
@@ -92,6 +93,8 @@ cd /d D:\Qcoder\打印机软件\pdf-duplex-print
 顶部指标栏不要再改回“本批 + 内联数字/文字”：当前为 4 个 `_px(112)` 等宽格，整组左右各有 1px 收边线，格间 1px 分隔；数字使用 14pt `FONT_NUM` + 强调色，名称使用 `FONT_SMALL` + 辅助灰，数字与名称之间留 3px。表头完整高度 76、紧凑高度 58。`test_header_metrics_use_equal_cells_without_overlap` 覆盖 1024 宽与 150% 缩放，断言四格等宽、数字/名称完整、且不与右侧打印机状态重叠。
 
 标题栏左侧标志、窗口图标、任务栏图标和桌面快捷方式统一使用根目录 `app_icon.ico`：`ui_main.py` 的 `_load_app_icon()` 按当前 DPI 选取最接近的 ICO 尺寸并用 LANCZOS 缩放，Pillow 不可用时回退到原来的 Canvas 双页绘制。不要再新增第二套标题栏图标资源。
+
+只读下拉框选完后 Tk 会保持整段文字的全选态；`TCombobox` 的 `selectbackground` / `selectforeground` 必须与字段底色、文字色一致，否则会显示系统深色选区，看起来像控件背景突然变深。`test_combobox_selection_uses_field_background` 锁定 `focus + readonly` 状态。
 
 此前还完成了 P1007 脱机预检、打印队列竞态与取消处理、单页文件跳过翻面、完成态和进度修复、后台切回黑块修复、逐源页缩放、四合一/八合一和横竖版入口。相关逻辑不要因 UI 调整被改写。
 
@@ -116,7 +119,7 @@ cd /d D:\Qcoder\打印机软件\pdf-duplex-print
 git diff --check
 ```
 
-2026-11-21 验证结果：`122 passed`，上述语法和格式检查通过。真实纸张输出不在该结论范围内。
+2026-11-21 验证结果：`123 passed`，上述语法和格式检查通过。真实纸张输出不在该结论范围内。
 
 ## 7. 真实打印边界与后续事项
 

@@ -91,7 +91,7 @@ class LogPanelMixin:
         在最小值与窗口 1/3 之间调整；窗口变高时自动按比例增高，但不挤压
         工作区（工作区所在行仍是唯一 weight=1 的伸缩行）。
 
-        拖动分隔条时只移动一条指示线，松手后才应用高度：Windows 下内部
+        拖动分隔条时只移动一个居中的浮动小手柄，松手后才应用高度：Windows 下内部
         拖动只产生局部脏区，Tk 来不及逐帧完整重绘，文件列表空状态和日志
         标题会残留旧像素、日志框会追赶鼠标抖动；窗口边框缩放是系统整窗
         失效所以正常。这里采用 Tk 经典 PanedWindow 的 opaqueresize=0 策略。
@@ -204,10 +204,15 @@ class LogPanelMixin:
         scroll.grid(row=0, column=2, sticky="ns")
         self.log_text.configure(yscrollcommand=scroll.set)
 
-        # 拖动只移动这条线，任何布局都不动，从根上避免拖动过程中的残影。
-        self.log_drag_line = tk.Frame(parent, background=c["accent"],
-                                      height=max(2, self._px(2)),
-                                      highlightthickness=0)
+        # 拖动只移动这个小手柄，任何布局都不动，从根上避免拖动过程中的残影。
+        # 白底 + 强调色细描边 + 约 2px 握把，沿用分隔条的语言，不横贯整窗。
+        self.log_drag_line = tk.Frame(parent, background=c["surface"],
+                                      highlightthickness=1,
+                                      highlightbackground=c["accent"],
+                                      height=self._px(10), width=self._px(56))
+        tk.Frame(self.log_drag_line, background=c["accent"],
+                 width=self._px(28), height=max(2, self._px(2))).place(
+            relx=0.5, rely=0.5, anchor="center")
         self.log_drag_line.place_forget()
 
     # ---------------------------------------------------------- 日志高度与详情
@@ -216,7 +221,8 @@ class LogPanelMixin:
         if self._log_settle_after is not None:
             self._cancel_log_settle()
             self._finish_log_resize()
-        self._log_drag = (event.y_root, self._log_height, self.log_sash.winfo_y())
+        self._log_drag = (event.y_root, self._log_height,
+                          self.log_sash.winfo_y() + self.log_sash.winfo_height() // 2)
         self._log_drag_active = True
         self._log_pending_height = self._log_height
         try:
@@ -229,26 +235,28 @@ class LogPanelMixin:
     def _on_log_sash_drag(self, event) -> None:
         if not self._log_drag:
             return
-        start_y, start_height, start_top = self._log_drag
+        start_y, start_height, start_center = self._log_drag
         height = self._clamp_log_height(start_height - (event.y_root - start_y))
         self._log_pending_height = height
-        self._position_log_drag_line(start_top - (height - start_height))
+        self._position_log_drag_line(start_center - (height - start_height))
 
-    def _show_log_drag_line(self, y: int) -> None:
-        self._position_log_drag_line(y)
+    def _show_log_drag_line(self, center_y: int) -> None:
+        self._position_log_drag_line(center_y)
         try:
             self.log_drag_line.lift()
         except tk.TclError:
             pass
 
-    def _position_log_drag_line(self, y: int) -> None:
+    def _position_log_drag_line(self, center_y: int) -> None:
         try:
             parent = self.log_drag_line.master
-            line_h = self.log_drag_line.winfo_reqheight()
+            width, line_h = self._px(56), self._px(10)
             max_y = max(0, parent.winfo_height() - line_h)
-            self.log_drag_line.place(x=self.log_sash.winfo_x(),
-                                     y=max(0, min(int(y), max_y)),
-                                     width=self.log_sash.winfo_width())
+            sash_w = self.log_sash.winfo_width()
+            self.log_drag_line.place(
+                x=self.log_sash.winfo_x() + max(0, (sash_w - width) // 2),
+                y=max(0, min(int(center_y) - line_h // 2, max_y)),
+                width=width, height=line_h)
         except tk.TclError:
             pass
 

@@ -149,6 +149,7 @@ class FilesPanelMixin:
         tree_frame.grid(row=3, column=0, sticky="nsew")
         tree_frame.rowconfigure(0, weight=1)
         tree_frame.columnconfigure(0, weight=1)
+        tree_frame.bind("<Configure>", self._on_tree_frame_configure)
 
         self.tree = ttk.Treeview(
             tree_frame,
@@ -214,6 +215,9 @@ class FilesPanelMixin:
             box, text="Office 文档与图片会先转换为 PDF，原文件不会被修改",
             background=c["surface"], foreground=c["muted"], font=_theme.FONT_SMALL)
         self.empty_detail_label.pack(pady=(self._px(GAP_S), 0))
+        tree_bg = ttk.Style(self.root).lookup("Treeview", "background") or c["surface"]
+        self.tree_partial_mask = tk.Frame(tree_frame, background=tree_bg,
+                                          borderwidth=0, highlightthickness=0)
         self._update_empty_state()
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree.bind("<Double-1>", self._on_tree_double_click)
@@ -351,10 +355,49 @@ class FilesPanelMixin:
 
     def _on_tree_configure(self, event=None) -> None:
         width = event.width if event is not None else self.tree.winfo_width()
-        if abs(width - getattr(self, "_last_tree_width", -1)) < 2:
+        if abs(width - getattr(self, "_last_tree_width", -1)) >= 2:
+            self._last_tree_width = width
+            self._fit_tree_columns()
+        self._fit_tree_visible_rows()
+
+    def _on_tree_frame_configure(self, event) -> None:
+        if getattr(event, "widget", None) is self.tree.master:
+            self._fit_tree_visible_rows(event.height)
+
+    def _fit_tree_visible_rows(self, available: int = 0) -> None:
+        """末尾不足一整行的部分用同色遮罩盖住，拖动时不再露出半行文字。"""
+        if not hasattr(self, "tree_scroll"):
             return
-        self._last_tree_width = width
-        self._fit_tree_columns()
+        mask = getattr(self, "tree_partial_mask", None)
+        if mask is None:
+            return
+        try:
+            if not available:
+                available = self.tree.master.winfo_height()
+            row_height = int(ttk.Style(self.root).lookup("Treeview", "rowheight") or 0)
+            overhead = (self.tree.winfo_reqheight()
+                        - int(self.tree.cget("height")) * row_height)
+            mapped = self.tree.winfo_ismapped()
+            tree_x = self.tree.winfo_x()
+            tree_width = self.tree.winfo_width()
+        except (tk.TclError, ValueError):
+            return
+        partial = 0
+        if (mapped and available > 1 and row_height > 0 and tree_width > 1
+                and self.tree.get_children("")):
+            partial = max(0, available - overhead) % row_height
+        if partial <= 0:
+            if getattr(self, "_tree_mask_key", None) is not None:
+                mask.place_forget()
+                self._tree_mask_key = None
+            return
+        key = (partial, available - partial, tree_x, tree_width)
+        if key == getattr(self, "_tree_mask_key", None):
+            return
+        self._tree_mask_key = key
+        mask.place(x=tree_x, y=available - partial,
+                   width=tree_width, height=partial)
+        mask.lift()
 
     def _fit_tree_columns(self) -> None:
         """按实际内容自适应列宽，并保证所有列宽之和 ≤ 可视宽度（不横向截断）。
@@ -1526,6 +1569,10 @@ class FilesPanelMixin:
             frame.grid()
             if scroll is not None:
                 scroll.grid_remove()
+            mask = getattr(self, "tree_partial_mask", None)
+            if mask is not None:
+                mask.place_forget()
+                self._tree_mask_key = None
 
     def _refresh_file_rows(self) -> None:
         if hasattr(self, "file_count_var"):
@@ -1545,6 +1592,7 @@ class FilesPanelMixin:
         # 行内容变化后强制重算（宽度不变也要按新的最长文案调整）
         self._last_tree_width = -1
         self._fit_tree_columns()
+        self._fit_tree_visible_rows()
         self._update_scope_hint()
         self._update_flow_steps()
         self._update_start_state()

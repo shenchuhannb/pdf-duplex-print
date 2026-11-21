@@ -189,3 +189,69 @@ def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, u
     finally:
         app.shutting_down = True
         root.destroy()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
+@pytest.mark.parametrize("scheme", ("stacked", "split"))
+@pytest.mark.parametrize("ui_scale", (1.0, 1.5))
+def test_log_drag_keeps_tree_rows_fully_visible(tmp_path, monkeypatch, scheme, ui_scale):
+    from tkinter import ttk
+
+    from ui_main import DuplexPrintApp, _create_root
+
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    root = _create_root()
+    root.withdraw()
+    root.tk.call("tk", "scaling", 1.3333 * ui_scale)
+    app = DuplexPrintApp(root, layout_scheme=scheme, ui_scale_override=ui_scale)
+    app.preview_enabled = False
+    for attr in ("preview_after_id", "ui_poll_id", "printer_poll_id",
+                 "_live_refresh_id"):
+        poll_id = getattr(app, attr, None)
+        if poll_id is not None:
+            root.after_cancel(poll_id)
+            setattr(app, attr, None)
+    root.attributes("-alpha", 0.0)
+    root.deiconify()
+    try:
+        root.geometry(f"{round(1024 * ui_scale)}x{round(720 * ui_scale)}+40+40")
+        app.empty_state.grid_remove()
+        app.tree.grid()
+        for index in range(6):
+            app.tree.insert("", "end", values=(
+                f"very_long_file_name_{index}_for_row_clipping.pdf",
+                "4", "", "→4面", "● 待打印"))
+        root.update()
+        # 初始化会再排一次防抖刷新；空 files 会把手工展示的表格切回空态。
+        for attr in ("preview_after_id", "_live_refresh_id"):
+            poll_id = getattr(app, attr, None)
+            if poll_id is not None:
+                root.after_cancel(poll_id)
+                setattr(app, attr, None)
+        app._fit_tree_visible_rows()
+
+        app._on_log_sash_press(SimpleNamespace(y_root=600))
+        mask = app.tree_partial_mask
+        saw_mask = False
+        for offset in range(0, 141, 7):
+            app._on_log_sash_drag(SimpleNamespace(y_root=600 - offset))
+            root.update()
+            frame_height = app.tree.master.winfo_height()
+            row_height = int(ttk.Style(root).lookup("Treeview", "rowheight"))
+            overhead = (app.tree.winfo_reqheight()
+                        - int(app.tree.cget("height")) * row_height)
+            partial = max(0, frame_height - overhead) % row_height
+            if partial:
+                assert mask.winfo_ismapped()
+                assert mask.winfo_height() == partial
+                assert mask.winfo_y() + partial == frame_height
+                assert mask.winfo_x() == app.tree.winfo_x()
+                assert mask.winfo_width() == app.tree.winfo_width()
+                assert (frame_height - overhead - partial) % row_height == 0
+                saw_mask = True
+            else:
+                assert not mask.winfo_ismapped()
+        assert saw_mask
+    finally:
+        app.shutting_down = True
+        root.destroy()

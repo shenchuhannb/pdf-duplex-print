@@ -1,0 +1,7 @@
+# 本项目运行依赖（建议安装在项目内 .venv，不污染系统 Python 环境）
+# 创建环境：python -m venv .venv
+# 安装：.venv\Scripts\python.exe -m pip install -r requirements.txt
+PyMuPDF==1.28.0
+pywin32==311
+Pillow==12.0.0
+tkinterdnd2==0.7.0

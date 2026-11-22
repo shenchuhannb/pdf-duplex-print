@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF 批量双面打印工具</title>
+<link rel="stylesheet" href="/static/style.css?v=3">
+</head>
+<body>
+<div id="app">
+
+  <!-- 顶部标题栏 + 统计 -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">文</div>
+      <div>
+        <div class="brand-title">PDF 批量双面打印</div>
+        <div class="brand-sub">批量 · 排版 · 手动双面</div>
+      </div>
+    </div>
+    <div class="metrics" id="metrics">
+      <div class="metric"><div class="metric-num" id="m-files">0</div><div class="metric-cap">文件</div></div>
+      <div class="metric"><div class="metric-num" id="m-pages">0</div><div class="metric-cap">选取页</div></div>
+      <div class="metric"><div class="metric-num" id="m-sheets">0</div><div class="metric-cap">预计张数</div></div>
+      <div class="metric"><div class="metric-num" id="m-flips">0</div><div class="metric-cap">翻面次数</div></div>
+    </div>
+    <div class="printer-chip" id="printer-chip">
+      <span class="dot ok" id="printer-dot"></span>
+      <span id="printer-name">检测打印机…</span>
+    </div>
+  </header>
+
+  <!-- 主区域：左文件列表 / 右预览 -->
+  <main class="workspace">
+
+    <section class="panel files-panel">
+      <div class="panel-head">
+        <span class="panel-title">文件列表 <span id="file-count" class="muted">0 个文件</span></span>
+        <div class="toolbar">
+          <button class="btn soft" id="btn-add">＋ 添加文件</button>
+          <button class="btn ghost" id="btn-add-dir">添加文件夹</button>
+          <button class="btn ghost" id="btn-remove">移除</button>
+          <button class="btn ghost danger" id="btn-clear">清空</button>
+        </div>
+      </div>
+      <div class="file-list" id="file-list">
+        <div class="empty" id="empty-state">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                  stroke="#bdc7d4" stroke-width="1.4"/>
+            <path d="M14 2v6h6" stroke="#bdc7d4" stroke-width="1.4"/>
+            <circle cx="17" cy="17" r="6" fill="#eaf0fd"/>
+            <path d="M17 14v6M14 17h6" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <div class="empty-title">添加文件，开始排版</div>
+          <div class="empty-sub">拖入 PDF / Word / 图片，或点击"＋ 添加文件"</div>
+          <div class="empty-note">Office 文档与图片会先转换为 PDF，原文件不会被修改</div>
+        </div>
+      </div>
+      <div class="files-footer">
+        <div class="recent">
+          <span class="muted small">最近：</span>
+          <input type="text" id="recent-input" placeholder="路径或文件名" class="input">
+        </div>
+      </div>
+    </section>
+
+    <section class="panel preview-panel">
+      <div class="panel-head">
+        <span class="panel-title">成纸预览 <span class="chip">实际</span></span>
+        <div class="preview-ctrl">
+          <span class="muted small">页</span>
+          <input type="number" id="preview-page" value="1" min="1" class="input num">
+          <span class="muted small" id="preview-total">/ —</span>
+        </div>
+      </div>
+      <div class="preview-stage" id="preview-stage">
+        <div class="preview-empty">
+          <div class="preview-empty-title">添加文件后显示实际打印效果</div>
+          <div class="empty-sub">在左侧添加 PDF、Word 或图片</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 底部：打印设置 -->
+  <section class="printbar">
+    <div class="printbar-row">
+      <label class="field">
+        <span class="cap">打印机</span>
+        <select id="printer-select" class="input select"></select>
+        <button class="btn ghost sm" id="btn-refresh-printers">刷新</button>
+      </label>
+      <label class="field">
+        <span class="cap">份数</span>
+        <input type="number" id="copies" value="1" min="1" max="9999" class="input num">
+      </label>
+      <div class="field">
+        <span class="cap">输出</span>
+        <label class="radio"><input type="radio" name="duplex" value="simplex" checked>单面</label>
+        <label class="radio"><input type="radio" name="duplex" value="manual">手动双面</label>
+      </div>
+      <div class="field grow">
+        <span class="cap">翻面流程</span>
+        <label class="radio"><input type="radio" name="flow" value="batch-last" checked>整批，最后取纸</label>
+        <label class="radio"><input type="radio" name="flow" value="batch-each">整批，逐文件取纸</label>
+        <label class="radio"><input type="radio" name="flow" value="each">逐文件执行</label>
+      </div>
+    </div>
+    <div class="printbar-row">
+      <div class="status" id="status-text">待开始</div>
+      <div class="muted small" id="status-sub">就绪，可以添加文件</div>
+      <div class="spacer"></div>
+      <button class="btn accent" id="btn-print">开始打印</button>
+      <button class="btn ghost" id="btn-cancel" disabled>暂停</button>
+    </div>
+  </section>
+
+  <!-- 底部：日志抽屉（可拖高度） -->
+  <section class="logpanel" id="logpanel">
+    <div class="sash" id="sash"><div class="grip"></div></div>
+    <div class="log-head">
+      <span class="panel-title">运行日志</span>
+      <span class="log-summary muted small" id="log-summary">暂无日志</span>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="btn-export-log">导出</button>
+      <button class="btn ghost sm" id="btn-clear-log">清空</button>
+      <button class="btn ghost sm" id="btn-open-dir">打开目录</button>
+    </div>
+    <div class="log-body" id="log-body"></div>
+  </section>
+
+</div>
+<script src="/static/app.js?v=3"></script>
+</body>
+</html>

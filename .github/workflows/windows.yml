@@ -13,17 +13,36 @@ jobs:
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Create virtual environment
         run: python -m venv .venv
       - name: Install dependencies
-        run: .venv\Scripts\python -m pip install -r requirements.txt -r requirements-dev.txt -r requirements-build.txt
+        shell: powershell
+        run: |
+          $log = & .venv\Scripts\python -m pip install --upgrade pip 2>&1 | Out-String
+          $log += & .venv\Scripts\python -m pip install -r requirements.txt -r requirements-dev.txt -r requirements-build.txt 2>&1 | Out-String
+          Write-Output $log
+          if ($LASTEXITCODE -ne 0) {
+            $log -split "`r?`n" | Select-Object -Last 12 | ForEach-Object {
+              Write-Output "::error title=pip-dependency-install::$_"
+            }
+            exit 1
+          }
       - name: Run tests
-        run: .venv\Scripts\python -m pytest -q
+        shell: powershell
+        run: |
+          $log = & .venv\Scripts\python -m pytest -q 2>&1 | Out-String
+          Write-Output $log
+          if ($LASTEXITCODE -ne 0) {
+            $log -split "`r?`n" | Select-Object -Last 20 | ForEach-Object {
+              Write-Output "::error title=pytest::$($_)"
+            }
+            exit 1
+          }
       - name: Run audit probes
         run: |
           .venv\Scripts\python docs/audit_evidence/pdf_config_probe.py

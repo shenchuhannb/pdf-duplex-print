@@ -86,7 +86,7 @@ def test_empty_badge_is_smooth_and_centered(ui_scale):
     from PIL import Image, ImageChops
 
     image = ui_files._render_empty_badge(ui_scale, "#2563EB", "#FFFFFF")
-    expected_size = round(20 * ui_scale)
+    expected_size = round(22 * ui_scale)
     assert image.size == (expected_size, expected_size)
 
     # 圆和加号共用同一个几何中心，任何 DPI 下都不能发生视觉偏移。

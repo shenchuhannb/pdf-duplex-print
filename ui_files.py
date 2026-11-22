@@ -84,19 +84,19 @@ def _render_empty_badge(ui_scale: float, accent: str, accent_text: str):
     """高分辨率绘制圆形加号，避免 Tk Canvas 的锯齿和 DPI 取整偏移。"""
     from PIL import Image, ImageDraw
 
-    size = max(20, int(round(20 * ui_scale)))
-    oversample = 4
+    size = max(22, int(round(22 * ui_scale)))
+    oversample = 8
     render_size = size * oversample + 1
     image = Image.new("RGBA", (render_size, render_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     # 奇数画布提供整数中心；偶数高分辨率画布的半像素坐标会被截断而偏移。
     center = render_size // 2
-    radius = int(round(9 * ui_scale * oversample))
+    radius = int(round(10 * ui_scale * oversample))
     draw.ellipse(
         (center - radius, center - radius, center + radius, center + radius),
         fill=accent, outline=accent, width=max(1, int(round(ui_scale * oversample))))
     arm = int(round(5 * ui_scale * oversample))
-    plus_width = max(1, int(round(2 * ui_scale * oversample)))
+    plus_width = max(1, int(round(3 * ui_scale * oversample)))
     draw.line((center - arm, center, center + arm, center),
               fill=accent_text, width=plus_width)
     draw.line((center, center - arm, center, center + arm),
@@ -208,7 +208,7 @@ class FilesPanelMixin:
         self.empty_state.grid(row=0, column=0, sticky="nsew")
         box = tk.Frame(self.empty_state, background=c["surface"])
         box.place(relx=0.5, rely=0.5, anchor="center")
-        icon = tk.Canvas(box, width=self._px(58), height=self._px(54),
+        icon = tk.Canvas(box, width=self._px(60), height=self._px(54),
                          background=c["surface"], highlightthickness=0, borderwidth=0)
         icon.pack(pady=(0, self._px(GAP)))
         s = self.ui_scale

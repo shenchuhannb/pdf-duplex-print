@@ -17,6 +17,7 @@ import sys
 GWL_WNDPROC = -4
 WM_ERASEBKGND = 0x0014
 WM_SIZE = 0x0005
+WM_NCPAINT = 0x0085
 SIZE_MINIMIZED = 1
 DWMWA_TRANSITIONS_FORCEDISABLED = 3
 SWP_NOSIZE = 0x0001
@@ -63,6 +64,9 @@ def _install(win, background: str) -> None:
                                 ctypes.c_void_p]
     user32.GetDC.restype = ctypes.c_void_p
     user32.GetDC.argtypes = [ctypes.c_void_p]
+    user32.GetWindowDC.restype = ctypes.c_void_p
+    user32.GetWindowDC.argtypes = [ctypes.c_void_p]
+    user32.GetWindowRect.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
     user32.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
     user32.RedrawWindow.restype = ctypes.c_int
     user32.RedrawWindow.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
@@ -103,6 +107,19 @@ def _install(win, background: str) -> None:
         except Exception:
             pass
 
+    def _fill_entire_window(h):
+        """用主题底色填充整个窗口矩形（含非客户区边框带）。"""
+        hdc = user32.GetWindowDC(h)
+        if hdc:
+            rect = RECT()
+            user32.GetWindowRect(h, ctypes.byref(rect))
+            width = rect.right - rect.left
+            height = rect.bottom - rect.top
+            whole = RECT(0, 0, width, height)
+            user32.FillRect(ctypes.c_void_p(hdc), ctypes.byref(whole),
+                            ctypes.c_void_p(brush))
+            user32.ReleaseDC(h, ctypes.c_void_p(hdc))
+
     def _wnd_proc(h, msg, wparam, lparam):
         if msg == WM_ERASEBKGND and wparam:  # wparam 为目标 DC
             rect = RECT()
@@ -110,14 +127,17 @@ def _install(win, background: str) -> None:
             user32.FillRect(ctypes.c_void_p(wparam), ctypes.byref(rect),
                             ctypes.c_void_p(brush))
             return 1
+        if msg == WM_NCPAINT:
+            # 尺寸变化后 DWM 要求重绘框架：先整窗打底，再让系统画标题栏
+            # 等非客户区元素，新扩大的边缘区域不再露出黑色旧表面。
+            _fill_entire_window(h)
+            return user32.CallWindowProcW(old_proc[0], h, msg, wparam, lparam)
         if msg == WM_SIZE and wparam != SIZE_MINIMIZED:
-            hdc = user32.GetDC(h)
-            if hdc:
-                rect = RECT()
-                user32.GetClientRect(h, ctypes.byref(rect))
-                user32.FillRect(ctypes.c_void_p(hdc), ctypes.byref(rect),
-                                ctypes.c_void_p(brush))
-                user32.ReleaseDC(h, ctypes.c_void_p(hdc))
+            # TkTopLevel 的客户区与内部 TkChild 之间有 8~31px 的边框带
+            # （顶部标题区最宽）。最大化尺寸突变时这些区域显示 DWM 的旧
+            # 表面（黑色）。用 GetWindowDC 覆盖整个窗口矩形（含边框带），
+            # 必须在调用原窗口过程（触发 Tk 重排）之前完成。
+            _fill_entire_window(h)
             result = user32.CallWindowProcW(old_proc[0], h, msg, wparam, lparam)
             try:
                 win.after_idle(_commit_frame)

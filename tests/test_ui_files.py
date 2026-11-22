@@ -178,7 +178,9 @@ def test_log_sash_drag_commits_complete_frame(monkeypatch):
     ] + redraw_on + [("present", expected_flags)]
 
 
-@pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
+@pytest.mark.skipif(
+    os.name != "nt" or os.environ.get("GITHUB_ACTIONS") == "true",
+    reason="Tk 几何回归需要可映射的交互式 Windows 桌面")
 @pytest.mark.parametrize("scheme", ("stacked", "split"))
 def test_resize_preserves_selection_text_and_button_spacing(tmp_path, monkeypatch, scheme):
     import tkinter.font as tkfont
@@ -235,7 +237,9 @@ def test_resize_preserves_selection_text_and_button_spacing(tmp_path, monkeypatc
         root.destroy()
 
 
-@pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
+@pytest.mark.skipif(
+    os.name != "nt" or os.environ.get("GITHUB_ACTIONS") == "true",
+    reason="Tk 几何回归需要可映射的交互式 Windows 桌面")
 @pytest.mark.parametrize("ui_scale", (1.0, 1.5))
 def test_header_metrics_use_equal_cells_without_overlap(tmp_path, monkeypatch, ui_scale):
     from ui_main import DuplexPrintApp, _create_root
@@ -305,7 +309,9 @@ def test_combobox_selection_uses_field_background():
         root.destroy()
 
 
-@pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")
+@pytest.mark.skipif(
+    os.name != "nt" or os.environ.get("GITHUB_ACTIONS") == "true",
+    reason="Tk 几何回归需要可映射的交互式 Windows 桌面")
 @pytest.mark.parametrize("scheme", ("stacked", "split"))
 @pytest.mark.parametrize("ui_scale", (1.0, 1.5))
 def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, ui_scale):

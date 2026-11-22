@@ -80,6 +80,31 @@ from ui_helpers import (
 _logger = logging.getLogger("pdf_duplex")
 
 
+def _render_empty_badge(ui_scale: float, accent: str, accent_text: str):
+    """高分辨率绘制圆形加号，避免 Tk Canvas 的锯齿和 DPI 取整偏移。"""
+    from PIL import Image, ImageDraw
+
+    size = max(20, int(round(20 * ui_scale)))
+    oversample = 4
+    render_size = size * oversample + 1
+    image = Image.new("RGBA", (render_size, render_size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    # 奇数画布提供整数中心；偶数高分辨率画布的半像素坐标会被截断而偏移。
+    center = render_size // 2
+    radius = int(round(9 * ui_scale * oversample))
+    draw.ellipse(
+        (center - radius, center - radius, center + radius, center + radius),
+        fill=accent, outline=accent, width=max(1, int(round(ui_scale * oversample))))
+    arm = int(round(5 * ui_scale * oversample))
+    plus_width = max(1, int(round(2 * ui_scale * oversample)))
+    draw.line((center - arm, center, center + arm, center),
+              fill=accent_text, width=plus_width)
+    draw.line((center, center - arm, center, center + arm),
+              fill=accent_text, width=plus_width)
+    resample = getattr(Image, "Resampling", Image).LANCZOS
+    return image.resize((size, size), resample)
+
+
 try:
     import tkinterdnd2 as _tkdnd
 except ImportError:  # 可选依赖
@@ -195,11 +220,12 @@ class FilesPanelMixin:
                          width=max(1, int(s)))
         icon.create_line(14*s, 31*s, 30*s, 31*s, fill=c["accent"],
                          width=max(1, int(s)))
-        icon.create_oval(37*s, 32*s, 55*s, 50*s, fill=c["accent"], outline=c["accent"])
-        icon.create_line(41*s, 41*s, 51*s, 41*s, fill=c["accent_text"],
-                         width=max(1, int(2*s)))
-        icon.create_line(46*s, 36*s, 46*s, 46*s, fill=c["accent_text"],
-                         width=max(1, int(2*s)))
+        from PIL import ImageTk
+
+        self.empty_badge_image = ImageTk.PhotoImage(
+            _render_empty_badge(self.ui_scale, c["accent"], c["accent_text"]), master=icon)
+        icon.create_image(self._px(46), self._px(41), anchor="center",
+                          image=self.empty_badge_image)
         self.empty_icon = icon
         self.empty_title_label = tk.Label(box, text="添加文件，开始排版",
                                           background=c["surface"], foreground=c["text"],

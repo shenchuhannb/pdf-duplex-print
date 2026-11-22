@@ -81,6 +81,28 @@ def test_file_added_during_conversion_is_processed(tmp_path, monkeypatch):
     assert pumps == 2
 
 
+@pytest.mark.parametrize("ui_scale", (1.0, 1.5))
+def test_empty_badge_is_smooth_and_centered(ui_scale):
+    from PIL import Image, ImageChops
+
+    image = ui_files._render_empty_badge(ui_scale, "#2563EB", "#FFFFFF")
+    expected_size = round(20 * ui_scale)
+    assert image.size == (expected_size, expected_size)
+
+    # 圆和加号共用同一个几何中心，任何 DPI 下都不能发生视觉偏移。
+    horizontal = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    vertical = image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+    assert ImageChops.difference(image, horizontal).getbbox() is None
+    assert ImageChops.difference(image, vertical).getbbox() is None
+    assert image.getpixel((expected_size // 2, expected_size // 2)) == (255, 255, 255, 255)
+
+    # 四个极点附近均有实际像素，圆形轮廓不会因低分辨率描边而断开。
+    edge = expected_size - 1
+    center = expected_size // 2
+    for point in ((center, 1), (center, edge - 1), (1, center), (edge - 1, center)):
+        assert image.getpixel(point)[3] > 0
+
+
 def test_log_sash_drag_commits_complete_frame(monkeypatch):
     events = []
 

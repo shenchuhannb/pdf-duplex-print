@@ -14,6 +14,13 @@ import ui_files
 import ui_log
 
 
+def _require_tk_desktop(root):
+    """GitHub 托管 Windows runner 没有可映射桌面，几何测试明确跳过。"""
+    root.update()
+    if root.winfo_height() <= 1 or not root.winfo_viewable():
+        pytest.skip("Tk window cannot be mapped without an interactive desktop")
+
+
 class ConversionHarness(ui_files.FilesPanelMixin):
     def __init__(self, files):
         self.files = files
@@ -195,6 +202,7 @@ def test_resize_preserves_selection_text_and_button_spacing(tmp_path, monkeypatc
         for width, height in ((1024, 720), (1440, 720), (1024, 1100), (1440, 1100)):
             root.geometry(f"{width}x{height}+40+40")
             root.update()
+            _require_tk_desktop(root)
             app._sync_file_panel_density()
             app._on_file_panel_configure()
             app._on_sel_bar_configure()
@@ -249,6 +257,7 @@ def test_header_metrics_use_equal_cells_without_overlap(tmp_path, monkeypatch, u
     try:
         root.geometry(f"{round(1024 * ui_scale)}x{round(720 * ui_scale)}+40+40")
         root.update()
+        _require_tk_desktop(root)
         app._layout_header_compact()
         root.update()
 
@@ -318,6 +327,7 @@ def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, u
     try:
         root.geometry(f"{round(1024 * ui_scale)}x{round(720 * ui_scale)}+40+40")
         root.update()
+        _require_tk_desktop(root)
         assert app.duplex_mode_var.get() == "duplex"
         assert app.vars["manual_duplex"].get() is True
 

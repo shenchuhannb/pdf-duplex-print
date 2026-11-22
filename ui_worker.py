@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple
 
 from core_utils import (
     CancelledByUser, PdfError, PrintError, PrinterOfflineError, PrintTimeoutError,
-    SettingsError, ToolError, format_page_list, is_pdf_path, is_word_path, is_wps_path,
+    PrintJobUnknownError, SettingsError, ToolError, format_page_list, is_pdf_path, is_word_path, is_wps_path,
     parse_page_range, split_conversion_records, split_drop_data,
 )
 from image_convert import (
@@ -39,7 +39,7 @@ from pdf_layout import (
     plan_batch_summary, preview_metrics, resolve_range_pages,
 )
 from printer_core import (
-    GdiPrinter, PrinterOptions, cancel_job, get_default_printer,
+    GdiPrinter, PrinterOptions, POST_JOB_SETTLE_SECONDS, cancel_job, get_default_printer,
     get_printable_insets_pt, get_printer_sources, get_printer_status, list_printers,
     open_directory, set_job_paused, validate_printer_connection, wait_for_print_job,
 )
@@ -93,7 +93,8 @@ class WorkerMixin:
 
         def runner():
             try:
-                box["result"] = fn()
+                # 停止后不再弹出已排队的翻面/确认框；清理类回调不走此入口。
+                box["result"] = None if self.stop_event.is_set() else fn()
             except Exception as exc:  # 主线程异常传回工作线程
                 box["error"] = exc
             finally:
@@ -173,7 +174,8 @@ class WorkerMixin:
                             f"{name}（{pages} 页）")
                         # 字体风险只在确实存在缺失/未嵌入时提示，避免日志噪音。
                         warning = font_warning_text(
-                            name, extra.get("missing_fonts") or [])
+                            name, extra.get("missing_fonts") or [],
+                            bitmap_missing_fonts=extra.get("bitmap_missing_fonts"))
                         if warning:
                             self._append_log(warning)
                         pdf_warning = pdf_font_warning_text(
@@ -325,10 +327,13 @@ class WorkerMixin:
                 "其余 PDF 文件仍可继续打印。")
 
         try:
-            copies = int(float(str(self.vars["copies"].get()).strip()))
+            number = float(str(self.vars["copies"].get()).strip())
+            if not number.is_integer():
+                raise ValueError
+            copies = int(number)
             if not 1 <= copies <= 99:
                 raise ValueError
-        except ValueError:
+        except (ValueError, OverflowError):
             messagebox.showerror("份数有误", "打印份数需为 1-99 的整数。", parent=self.root)
             return
 
@@ -418,13 +423,18 @@ class WorkerMixin:
                                             self.settings["last_range"])
         self._save_settings_now()
 
+        per_file_settings = bool(self.vars["per_file"].get())
+        print_flow = str(self.vars["print_flow"].get() or "batch_all")
+        if per_file_settings and any(job["copies"] != copies for job in jobs):
+            print_flow = "per_file"
         snapshot = {
             "printer": printer,
             "jobs": jobs,
             "copies": copies,
+            "per_file_settings": per_file_settings,
             "collate": str(self.vars["collate"].get()) == "collate",
             "manual_duplex": bool(self.vars["manual_duplex"].get()),
-            "print_flow": str(self.vars["print_flow"].get() or "batch_all"),
+            "print_flow": print_flow,
             "copy_exec_on": bool(self.vars["copy_exec_on"].get()),
             "reverse": bool(self.vars["reverse"].get()),
             "wait_mode": str(self.vars["wait_mode"].get() or "queue"),
@@ -487,14 +497,23 @@ class WorkerMixin:
             self.pause_event.set()
             self.pause_btn.configure(text="继续")
             self.status_var.set("已暂停：当前页打印完后暂停；翻面提示期间不会自动继续")
-            if self.current_job_id:
-                set_job_paused(self.current_printer(), self.current_job_id, True)
+            if self.current_job_id and not set_job_paused(
+                    self.current_printer(), self.current_job_id, True):
+                self.paused = False
+                self.pause_event.clear()
+                self.pause_btn.configure(text="暂停")
+                self.status_var.set("暂停失败：无法暂停当前队列任务，请检查 Windows 打印队列。")
         else:
+            if self.current_job_id and not set_job_paused(
+                    self.current_printer(), self.current_job_id, False):
+                self.paused = True
+                self.pause_event.set()
+                self.pause_btn.configure(text="继续")
+                self.status_var.set("恢复失败：当前队列任务仍处于暂停状态。")
+                return
             self.pause_event.clear()
             self.pause_btn.configure(text="暂停")
             self.status_var.set("已继续打印…")
-            if self.current_job_id:
-                set_job_paused(self.current_printer(), self.current_job_id, False)
 
     def stop_print(self) -> None:
         if not self.print_active:
@@ -506,9 +525,11 @@ class WorkerMixin:
             return
         self.stop_event.set()
         self.pause_event.clear()
-        if self.current_job_id:
-            cancel_job(self.current_printer(), self.current_job_id)
-        self.status_var.set("正在取消…（请等待当前页结束）")
+        if self.current_job_id and not cancel_job(self.current_printer(), self.current_job_id):
+            self.status_var.set("正在停止后续页面；当前队列任务取消失败，请检查 Windows 队列。")
+            self._append_log("队列任务取消失败，已继续执行软件停止标记。")
+        else:
+            self.status_var.set("正在取消…（请等待当前页结束）")
         self._append_log("用户请求取消打印。")
 
     # ------------------------------------------------------------- 工作线程
@@ -527,6 +548,7 @@ class WorkerMixin:
         )
         temp_dir = ""
         prepared: List[dict] = []
+        current_iid = ""
         completed = False
         cancelled = False
         error_text = ""
@@ -540,6 +562,7 @@ class WorkerMixin:
 
             # 1) 每个文件独立排版（各自补页，保证文件边界干净）
             for index, job in enumerate(snapshot["jobs"], start=1):
+                current_iid = job["iid"]
                 self._raise_if_stopped()
                 self._post(("status", f"正在排版 {index}/{len(snapshot['jobs'])}：{job['name']}"))
                 self._post(("rows", [(job["iid"], "排版中")]))
@@ -553,6 +576,7 @@ class WorkerMixin:
                     "sides": result.plan.output_count,
                     "plan": result.plan,
                     "paper": result.plan.paper_pt,
+                    "completed": False,
                 })
                 self._post(("log", f"《{job['name']}》{describe_plan(result.plan)}"))
                 self._post(("rows", [(job["iid"], "已排版")]))
@@ -603,10 +627,20 @@ class WorkerMixin:
                     self._remove_temp_file(item["path"])
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
-            # 与 _poll_ui_queue 的 rows 处理器约定一致：(iid, 状态文本)
-            statuses = [(item["job"]["iid"],
-                         "已取消" if cancelled else ("已完成" if completed else "失败"))
-                        for item in prepared]
+            prepared_by_iid = {item["job"]["iid"]: item for item in prepared}
+            statuses = []
+            for job in snapshot["jobs"]:
+                iid = job["iid"]
+                item = prepared_by_iid.get(iid)
+                if completed or (item is not None and item.get("completed")):
+                    status = "已完成"
+                elif cancelled:
+                    status = "已取消"
+                elif iid == current_iid or item is not None:
+                    status = "失败"
+                else:
+                    status = "未执行"
+                statuses.append((iid, status))
             self._post(("rows", statuses))
             # 转换产物与打印临时文件一并在完成后删除（异常/取消路径同样执行）
             self._post(("call", self._cleanup_word_temps))
@@ -621,7 +655,8 @@ class WorkerMixin:
             self._post(("busy", False))
             if completed and snapshot["auto_open"] and snapshot["keep_output"]:
                 self._post(("open_dir", snapshot["output_dir"]))
-            self._show_summary(completed, cancelled, error_text, prepared)
+            self._show_summary(completed, cancelled, error_text, prepared,
+                               copies=snapshot["copies"])
             self.current_job_id = 0
 
     def _safe_filename(self, name: str) -> str:
@@ -629,8 +664,10 @@ class WorkerMixin:
         return (cleaned or "document")[:60]
 
     def _show_summary(self, completed: bool, cancelled: bool, error_text: str,
-                      prepared: List[dict]) -> None:
-        sheets = sum(item["sides"] for item in prepared) // 2 if prepared else 0
+                      prepared: List[dict], copies: int = 1) -> None:
+        sheets = sum((item["sides"] // 2) * int(
+            item.get("effective_copies") or item["job"].get("copies") or copies)
+            for item in prepared) if prepared else 0
         if completed:
             title, message = "打印完成", (
                 f"共 {len(prepared)} 个文件、约 {sheets} 张纸的打印任务已提交完成。\n"
@@ -655,11 +692,11 @@ class WorkerMixin:
 
     def _sleep_interruptible(self, seconds: float) -> None:
         """可被取消/暂停打断的等待（暂停不顺延结束时间）。"""
-        deadline = time.time() + max(0.0, float(seconds))
-        while time.time() < deadline:
+        deadline = time.monotonic() + max(0.0, float(seconds))
+        while time.monotonic() < deadline:
             if self.stop_event.is_set():
                 raise CancelledByUser("用户取消。")
-            time.sleep(min(0.2, max(0.0, deadline - time.time())))
+            time.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
 
     def _remove_temp_file(self, path: str) -> None:
         """临时文件删除重试：打印机驱动可能仍在占用文件句柄。"""
@@ -673,6 +710,19 @@ class WorkerMixin:
 
     def _run_single_sided(self, snapshot: dict, prepared: List[dict],
                           target_dir: str, stamp: str) -> None:
+        if snapshot.get("per_file_settings"):
+            for item in prepared:
+                job = item["job"]
+                copies = int(job.get("copies") or snapshot["copies"])
+                item["effective_copies"] = copies
+                order = compute_single_sided_orders(
+                    item["sides"], copies, snapshot["collate"], snapshot["reverse"])
+                self._post(("rows", [(job["iid"], "单面打印")]))
+                self._print_phase(item["path"], order, f"PDF {job['name']} 单面",
+                                  snapshot, f"单面打印 · 《{job['name']}》")
+                item["completed"] = True
+                self._post(("rows", [(job["iid"], "已完成")]))
+            return
         paths = [item["path"] for item in prepared]
         merged_path = os.path.join(target_dir, f"单面合并_{stamp}.pdf")
         total, counts = merge_layout_pdfs(paths, merged_path) if len(paths) > 1 else (
@@ -741,7 +791,7 @@ class WorkerMixin:
                 # 每份必须取出后才能换纸打印下一份，否则下一份正面会叠在上一份反面。
                 action = self._ui_call(lambda c=copy_no: self._batch_done_modal(
                     c, copies, sheets, final=(c == copies)))
-                if action == "cancel":
+                if action != "continue":
                     raise CancelledByUser("用户在完成提示中选择取消。")
             return
 
@@ -760,8 +810,9 @@ class WorkerMixin:
         self._post(("log", "整批阶段二：翻面后按全局逆序打印全部反面（全局偶数面）。"))
         self._print_batch_backs(snapshot, prepared, ranges, backs, merged_path,
                                 pause_between_files=pause_between_files)
-        action = self._ui_call(lambda: self._batch_done_modal(1, 1, sheets, final=True))
-        if action == "cancel":
+        action = self._ui_call(lambda: self._batch_done_modal(
+            1, 1, sheets * copies, final=True))
+        if action != "continue":
             raise CancelledByUser("用户在完成提示中选择取消。")
         self._post(("log", f"整批打印完成：{sheets} 张纸 × {copies} 份。"))
 
@@ -799,13 +850,14 @@ class WorkerMixin:
                 f"PDF {prefix}整批打印 阶段二（反面）·{job['name']}", snapshot,
                 f"{prefix}整批反面 · 文件 {file_no}/{len(prepared)} · 第二面（反面）· "
                 f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
+            item["completed"] = True
             done_sheets += sheets
             if position < total_groups:
                 next_name = ordered[position][0]["job"]["name"]
                 action = self._ui_call(lambda: self._file_done_modal(
-                    job, file_no, len(prepared), item["sides"], next_name,
+                    job, file_no, len(prepared), item["sides"] * snapshot["copies"], next_name,
                     mode="batch", group_done=position, group_total=total_groups))
-                if action == "cancel":
+                if action != "continue":
                     raise CancelledByUser("用户在取纸提示中选择取消。")
         self._post(("log", f"{prefix}整批反面全部完成：共 {done_sheets} 张纸。"))
 
@@ -823,16 +875,17 @@ class WorkerMixin:
             self._raise_if_stopped()
             job = item["job"]
             single_side = content_side_numbers(item["plan"]) == [1]
-            sheets = 1 if single_side else item["sides"] // 2
+            copies = int(job.get("copies") or snapshot["copies"])
+            item["effective_copies"] = copies
             fronts, backs = compute_duplex_orders(
-                item["sides"], snapshot["copies"], snapshot["collate"],
-                snapshot["reverse"])
+                item["sides"], copies, snapshot["collate"], snapshot["reverse"])
+            sheets = len(fronts)
             if single_side:
                 # 仅 1 面内容：fronts 即第 1 面 × 份数，跳过翻面与空白反面
                 self._post(("rows", [(job["iid"], "单面打印")]))
                 self._post(("log", f"《{job['name']}》仅 1 页内容，按单面打印，无需翻面。"))
                 phase = (f"逐文件 {index}/{total_files} · 单面打印 · "
-                         f"《{job['name']}》 · 本文件 1 张 · 已完成 {done_sheets} 张")
+                         f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
                 self._post(("status", phase))
                 self._print_phase(item["path"], fronts, f"PDF {job['name']} 单面",
                                   snapshot, phase)
@@ -847,7 +900,9 @@ class WorkerMixin:
                 self._raise_if_stopped()
                 if backs:
                     self._post(("rows", [(job["iid"], "等待翻面")]))
-                    if not self._ask_flip_file(job, item["sides"], backs, index, total_files):
+                    if not self._ask_flip_file(
+                            job, item["sides"] * copies, backs,
+                            index, total_files):
                         raise CancelledByUser("用户在翻面提示中选择取消。")
                 self._post(("rows", [(job["iid"], "第2面")]))
                 self._post(("log", f"《{job['name']}》逐文件阶段二：反面（逆序）。"))
@@ -856,6 +911,7 @@ class WorkerMixin:
                 self._print_phase(item["path"], backs, f"PDF {job['name']} 反面",
                                   snapshot, f"逐文件 {index}/{total_files} · 第二面（反面）· "
                                             f"《{job['name']}》 · 本文件 {sheets} 张 · 已完成 {done_sheets} 张")
+            item["completed"] = True
             self._post(("rows", [(job["iid"], "已完成")]))
             done_sheets += sheets
             remaining = total_files - index
@@ -863,9 +919,9 @@ class WorkerMixin:
                                   f"{done_sheets} 张，剩余 {remaining} 个"))
             next_name = (prepared[index]["job"]["name"] if remaining else "")
             action = self._ui_call(lambda: self._file_done_modal(
-                job, index, total_files, item["sides"], next_name,
+                job, index, total_files, item["sides"] * copies, next_name,
                 mode="by_file", final=(remaining == 0), single_sided=single_side))
-            if action == "cancel":
+            if action != "continue":
                 raise CancelledByUser("用户在取纸提示中选择取消。")
 
     def _file_done_modal(self, job: dict, done: int, total: int, sides: int,
@@ -884,7 +940,7 @@ class WorkerMixin:
         关闭窗口或按 Esc 一律按 cancel 处理（未确认不得继续下一个阶段）。
         """
         result = {"action": "cancel"}
-        sheets = 1 if single_sided else sides // 2
+        sheets = sides if single_sided else sides // 2
         if mode == "batch":
             title = f"该文件已打完，请取出这 {sheets} 张纸"
             next_line = f"下一个：{next_name} 的反面（同一叠纸继续打印）"
@@ -914,7 +970,7 @@ class WorkerMixin:
                 progress_line = (f"进度：已完成 {done}/{total} 个文件，"
                                  f"剩余 {max(0, total - done)} 个")
             if single_sided:
-                stage_line = "阶段：单面打印已完成 · 本文件 1 张纸（1 个输出面）"
+                stage_line = f"阶段：单面打印已完成 · 本文件 {sheets} 张纸（{sides} 个输出面）"
                 sample_line = "仅 1 页内容，无需翻面。"
             else:
                 stage_line = (f"阶段：第二面（反面）已完成 · 本文件 {sheets} 张纸"
@@ -1053,6 +1109,22 @@ class WorkerMixin:
         return (f"正面 {format_page_list(fronts, limit=8)} → "
                 f"反面 {format_page_list(backs, limit=8)}（共 {sides // 2} 张纸）")
 
+    def _confirm_uncertain_phase(self, phase_text: str, reason: str) -> None:
+        """无法确认出纸时默认停止，只有用户明确核查后才允许继续。"""
+        self._post(("log", reason))
+        self._post(("status", f"{phase_text}：等待确认实际出纸状态…"))
+        confirmed = self._ui_call(lambda: messagebox.askyesno(
+            "无法确认打印结果",
+            f"{reason}\n\n请检查 Windows 打印队列和实际纸张。\n"
+            "只有本阶段已经完整、正确出纸时才选择“是”继续；否则选择“否”停止。",
+            parent=self.root, default=messagebox.NO))
+        if confirmed is True:
+            self._post(("log", "用户已核查并确认本阶段完整出纸，允许继续后续阶段。"))
+            return
+        if self.current_job_id and not cancel_job(self.current_printer(), self.current_job_id):
+            self._post(("log", "当前队列任务取消失败，请在 Windows 打印队列中手动检查。"))
+        raise PrintError("本阶段出纸状态未确认，已停止后续打印，避免正反面交叠。")
+
     def _print_phase(self, pdf_path: str, order: List[int], job_name: str,
                      snapshot: dict, phase_text: str) -> None:
         """提交一个打印任务并按设置等待完成（队列监听超时自动降级）。"""
@@ -1075,7 +1147,8 @@ class WorkerMixin:
         try:
             job_id = printer.print_pages(
                 pdf_path, order, job_name, self.stop_event,
-                on_page=on_page, pause_event=self.pause_event)
+                on_page=on_page, pause_event=self.pause_event,
+                on_job_start=lambda value: setattr(self, "current_job_id", value))
         finally:
             self.current_job_id = printer.last_job_id
         if job_id <= 0:
@@ -1088,15 +1161,12 @@ class WorkerMixin:
                     log=self._log_worker, pause_event=self.pause_event)
                 if not finished:
                     raise CancelledByUser("用户取消。")
-            except PrintTimeoutError as exc:
-                # 超时兜底：改用固定延时继续，避免整批中断
-                self._post(("log", str(exc)))
-                self._post(("status", f"{phase_text}：队列监听超时，改用固定延时继续…"))
-                self._sleep_interruptible(snapshot["delay"])
+            except (PrintTimeoutError, PrintJobUnknownError) as exc:
+                self._confirm_uncertain_phase(phase_text, str(exc))
         else:
             self._sleep_interruptible(snapshot["delay"])
-        # 给机械出纸留少量余量
-        self._sleep_interruptible(1.0)
+        # 队列完成只代表 spooler 状态；给机械出纸保留余量。
+        self._sleep_interruptible(POST_JOB_SETTLE_SECONDS)
         # 每个打印任务一行结果日志（jobId / 面数 / 耗时），便于失败后回看定位
         self._post(("log", f"{phase_text}：任务 #{job_id} 结束，{len(order)} 个输出面，"
                            f"用时 {time.time() - started_at:.1f} 秒。"))

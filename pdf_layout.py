@@ -167,6 +167,10 @@ def compute_duplex_orders(
     整体出纸顺序反向，但配对关系不变。
     """
     copies = max(1, int(copies))
+    if total_sides == 1:
+        return [1] * copies, []  # 单内容面沿用免翻面路径。
+    if total_sides <= 0 or total_sides % 2:
+        raise PdfError("双面页序的输入面数必须是正偶数（请先补齐空白页）。")
     odd_sides = [p for p in range(1, total_sides + 1) if p % 2 == 1]
     if collate:
         fronts = odd_sides * copies
@@ -227,7 +231,10 @@ def compute_merged_duplex_orders(
 
     前提：合并后总页数为偶数（每个文件已各自补页保证）。
     """
-    total = sum(max(0, int(count)) for count in file_side_counts)
+    counts = [max(0, int(count)) for count in file_side_counts]
+    if any(count % 2 for count in counts):
+        raise PdfError("每个文件的面数都必须先补为偶数，才能保持全局双面配对。")
+    total = sum(counts)
     if total <= 0:
         raise PdfError("没有需要打印的页面。")
     if total % 2 != 0:
@@ -638,7 +645,8 @@ def preview_metrics(
     paper_w, paper_h = plan.paper_pt
     left, top, right, bottom = options.effective_margins_pt()
     nup = 2 if options.booklet else max(1, int(plan.nup))
-    slots = slot_rects(paper_w, paper_h, nup, options)
+    gap = 0.0 if options.booklet else 2.0
+    slots = slot_rects(paper_w, paper_h, nup, options, gap_mm=gap)
     slot = slots[0] if slots else fitz.Rect(left, top, paper_w - right, paper_h - bottom)
 
     src = fitz.Rect(0, 0, max(1.0, page_w), max(1.0, page_h))
@@ -802,6 +810,8 @@ def build_layout_plan(
     """
     if selected_count < 1:
         raise PdfError("选定范围至少需要 1 页。")
+    if int(options.nup) not in NUP_CHOICES:
+        raise PdfError(f"不支持每面 {options.nup} 页；请选择 {NUP_CHOICES} 之一。")
 
     n = int(selected_count)
     duplex_pad = 1 if (options.manual_duplex and n % 2 == 1) else 0
@@ -873,24 +883,21 @@ def describe_plan(plan: LayoutPlan) -> str:
 # 裁切：显示坐标 → 原始页面坐标
 # ----------------------------------------------------------------------------
 def display_rect_to_media_rect(page: "fitz.Page", rect: "fitz.Rect") -> "fitz.Rect":
-    """把“显示方向”的矩形换算成 PDF 原始（未旋转）坐标。
-
-    页面的 /Rotate 会让显示宽高与 MediaBox 交换；裁切边距按用户看到的
-    方向计算，因此需要按 90/180/270 做坐标映射。
-    """
-    media = page.mediabox
-    width, height = media.width, media.height
+    """把当前 CropBox 的显示坐标映射回未旋转 PDF 坐标。"""
+    box = page.cropbox
+    width, height = box.width, box.height
     rotation = page.rotation % 360
     x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1, rect.y1
     if rotation == 90:
-        # 显示 x = H - y，显示 y = x
-        return fitz.Rect(y0, height - x1, y1, height - x0)
+        return fitz.Rect(box.x0 + y0, box.y0 + height - x1,
+                         box.x0 + y1, box.y0 + height - x0)
     if rotation == 180:
-        return fitz.Rect(width - x1, height - y1, width - x0, height - y0)
+        return fitz.Rect(box.x0 + width - x1, box.y0 + height - y1,
+                         box.x0 + width - x0, box.y0 + height - y0)
     if rotation == 270:
-        # 显示 x = y，显示 y = W - x
-        return fitz.Rect(width - y1, x0, width - y0, x1)
-    return fitz.Rect(x0, y0, x1, y1)
+        return fitz.Rect(box.x0 + width - y1, box.y0 + x0,
+                         box.x0 + width - y0, box.y0 + x1)
+    return fitz.Rect(box.x0 + x0, box.y0 + y0, box.x0 + x1, box.y0 + y1)
 
 
 def crop_rect_for_page(page: "fitz.Page", options: LayoutOptions) -> Optional["fitz.Rect"]:
@@ -905,11 +912,11 @@ def crop_rect_for_page(page: "fitz.Page", options: LayoutOptions) -> Optional["f
     if inner.width <= 1 or inner.height <= 1:
         return None
     media_rect = display_rect_to_media_rect(page, inner)
-    media = page.mediabox
-    # 夹到 MediaBox 内，避免驱动/PyMuPDF 拒绝非法裁剪框
+    box = page.cropbox
+    # 用户裁切只能缩小当前 CropBox，不能因偏移或旋转反而扩大可见区域。
     return fitz.Rect(
-        max(media.x0, media_rect.x0), max(media.y0, media_rect.y0),
-        min(media.x1, media_rect.x1), min(media.y1, media_rect.y1),
+        max(box.x0, media_rect.x0), max(box.y0, media_rect.y0),
+        min(box.x1, media_rect.x1), min(box.y1, media_rect.y1),
     )
 
 
@@ -926,14 +933,13 @@ class ComposeResult:
 
 
 def _standalone_page(src: "fitz.Document", pno: int, crop_rect: Optional["fitz.Rect"],
-                     rotate: bool) -> "fitz.Document":
-    """把源页复制成独立单页文档，可选裁切与 90° 旋转。
-
-    先复制再裁切，避免修改用户原文件；裁切后 page.rect 以 (0,0) 为原点，
-    后续 show_pdf_page 无需再关心原始 MediaBox 偏移。
-    """
+                     rotate: bool, annots: bool = False) -> "fitz.Document":
+    """复制单页；按需把批注/表单扁平化，保证后续 N-up 放置不会丢失。"""
     tmp = fitz.open()
-    tmp.insert_pdf(src, from_page=pno, to_page=pno)
+    tmp.insert_pdf(src, from_page=pno, to_page=pno, annots=annots, widgets=annots)
+    if annots:
+        # show_pdf_page 不复制交互批注；打印和保留排版 PDF 需要可见内容时先 bake。
+        tmp.bake(annots=True, widgets=True)
     if crop_rect is not None:
         tmp[0].set_cropbox(crop_rect)
     if not rotate:
@@ -966,7 +972,7 @@ def _place_source(
         if (display_w > display_h) != (slot.width > slot.height):
             rotate = True
 
-    standalone = _standalone_page(src, pno, crop_rect, rotate)
+    standalone = _standalone_page(src, pno, crop_rect, rotate, annots=options.annots)
     try:
         src_rect = standalone[0].rect
         dest, clip, keep_proportion = compute_placement(
@@ -1006,7 +1012,9 @@ def compose_layout_pdf(
                 filtered.append(abs_no)
             pages = filtered
         if not pages:
-            raise PdfError("选定范围内全部是空白页（已按“忽略空白页”设置跳过）。")
+            if options.skip_blank and skipped:
+                raise PdfError("选定范围内全部是空白页（已按“忽略空白页”设置跳过）。")
+            raise PdfError("选定范围至少需要 1 页。")
 
         first_landscape = src[pages[0] - 1].rect.width > src[pages[0] - 1].rect.height
         plan = build_layout_plan(len(pages), options, first_landscape)
@@ -1020,7 +1028,7 @@ def compose_layout_pdf(
                 slots = slot_rects(paper_w, paper_h, plan.nup, options, gap_mm=2.0)
             for index, rel in enumerate(side):
                 if index >= len(slots):
-                    break
+                    raise PdfError("排版计划与槽位数量不一致，已中止以避免丢页。")
                 slot = slots[index]
                 if options.nup_border:
                     out_page.draw_rect(slot, color=(0.55, 0.55, 0.55), width=0.6)

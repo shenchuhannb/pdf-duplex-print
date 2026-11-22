@@ -3,6 +3,7 @@
 
 
 import ctypes
+import copy
 import logging
 import os
 import queue
@@ -1145,7 +1146,9 @@ class SettingsPanelMixin:
 
     def _save_settings_now(self) -> None:
         try:
-            save_settings(self._collect_settings())
+            current = self._collect_settings()
+            save_settings(current, base=self._settings_baseline)
+            self._settings_baseline = copy.deepcopy(current)
         except SettingsError as exc:
             self._append_log(str(exc))
 

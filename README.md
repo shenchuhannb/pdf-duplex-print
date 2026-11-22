@@ -66,11 +66,11 @@ Python 3.10+ 必须已安装；程序不会自动在其他磁盘安装 Python。
 ## 打包为免安装 EXE
 
 ```bat
-.venv\Scripts\python.exe -m pip install pyinstaller
+.venv\Scripts\python.exe -m pip install -r requirements-build.txt
 tools\build_exe.bat ".venv"
 ```
 
-产物位于 `dist\PDFDuplexPrint\`，整个目录可拷贝分发。
+产物位于 `dist\PDFDuplexPrint\`，整个目录可拷贝分发。构建脚本会嵌入版本信息、自动执行冻结自检并生成 `SHA256SUMS.txt`。第三方许可证说明见 `THIRD_PARTY_NOTICES.md`。
 
 ## 测试
 
@@ -79,7 +79,7 @@ tools\build_exe.bat ".venv"
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-覆盖页序推导、补页规则、范围解析、DEVMODE 强制单面、设置迁移与日志初始化等纯逻辑；其中"正反面配对"会遍历所有份数与逐份组合，断言每张纸的反面页码恒等于正面页码 + 1。当前基线为 123 项全部通过。
+覆盖页序推导、补页规则、范围解析、DEVMODE 强制单面、设置迁移与日志初始化等纯逻辑；其中"正反面配对"会遍历所有份数与逐份组合，断言每张纸的反面页码恒等于正面页码 + 1。当前基线为 151 项全部通过，另附审计探针与真实 Word 隐藏转换验证。
 
 ## 启动自检
 

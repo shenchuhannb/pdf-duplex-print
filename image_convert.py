@@ -11,14 +11,21 @@
 
 from __future__ import annotations
 
+import math
 import os
-from typing import Dict, List
+import tempfile
+import time
+from typing import Dict
 
 import fitz
 from PIL import Image, ImageOps
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp")
 FIRST_FRAME_ONLY = (".gif", ".webp")
+MAX_IMAGE_PIXELS = 50_000_000
+MAX_IMAGE_TOTAL_PIXELS = 100_000_000
+MAX_IMAGE_FRAMES = 200
+IMAGE_CONVERT_TIMEOUT_SECONDS = 60.0
 
 
 class ImageConvertError(Exception):
@@ -50,8 +57,8 @@ def _page_points(image: Image.Image) -> tuple:
         dpi_x, dpi_y = float(dpi[0]), float(dpi[1])
     except (TypeError, ValueError, IndexError):
         dpi_x = dpi_y = 96.0
-    dpi_x = dpi_x if dpi_x > 1 else 96.0
-    dpi_y = dpi_y if dpi_y > 1 else 96.0
+    dpi_x = dpi_x if math.isfinite(dpi_x) and dpi_x > 1 else 96.0
+    dpi_y = dpi_y if math.isfinite(dpi_y) and dpi_y > 1 else 96.0
     width = max(1.0, image.width * 72.0 / dpi_x)
     height = max(1.0, image.height * 72.0 / dpi_y)
     # 防止异常元数据生成超大页面：最长边限制在 2000 点（约 70cm）
@@ -63,11 +70,13 @@ def _page_points(image: Image.Image) -> tuple:
 
 
 def image_to_pdf(src: str, dst: str) -> Dict[str, object]:
-    """把图片文件转换成 PDF，返回 {"pages", "converter", "first_frame_only"}。"""
+    """把图片转换成 PDF；成功后才原子替换目标，避免半成品和并发冲突。"""
     src = os.path.abspath(src)
     dst = os.path.abspath(dst)
     if not os.path.isfile(src):
         raise ImageConvertError(f"找不到图片文件：{src}")
+    if os.path.normcase(src) == os.path.normcase(dst):
+        raise ImageConvertError("源图片与输出 PDF 不能是同一路径。")
     try:
         image = Image.open(src)
     except Exception as exc:
@@ -75,28 +84,41 @@ def image_to_pdf(src: str, dst: str) -> Dict[str, object]:
 
     first_only = src.lower().endswith(FIRST_FRAME_ONLY)
     frames = 1 if first_only else max(1, int(getattr(image, "n_frames", 1)))
-    frame_files: List[str] = []
+    if frames > MAX_IMAGE_FRAMES:
+        image.close()
+        raise ImageConvertError(f"图片帧数超过安全上限（{MAX_IMAGE_FRAMES} 帧）。")
     document = fitz.open()
+    started = time.monotonic()
+    total_pixels = 0
+    folder = os.path.dirname(dst) or "."
+    os.makedirs(folder, exist_ok=True)
     try:
-        for index in range(frames):
-            try:
-                image.seek(index)
-            except EOFError:
-                break
-            frame = ImageOps.exif_transpose(image)
-            rgb = _flatten(frame)
-            width_pt, height_pt = _page_points(frame)
-            page = document.new_page(width=width_pt, height=height_pt)
-            frame_path = os.path.join(
-                os.path.dirname(dst) or ".",
-                f".frame_{os.getpid()}_{index}_{os.path.basename(src)}.png")
-            rgb.save(frame_path, "PNG")
-            frame_files.append(frame_path)
-            page.insert_image(page.rect, filename=frame_path, keep_proportion=False)
-        if document.page_count <= 0:
-            raise ImageConvertError("图片没有可转换的帧。")
-        document.save(dst, deflate=True)
-        return {"pages": document.page_count,
+        with tempfile.TemporaryDirectory(prefix=".image_frames_", dir=folder) as workdir:
+            for index in range(frames):
+                if time.monotonic() - started > IMAGE_CONVERT_TIMEOUT_SECONDS:
+                    raise ImageConvertError("图片转换超时，请拆分文件或降低图片规模后重试。")
+                try:
+                    image.seek(index)
+                except EOFError:
+                    break
+                pixels = image.width * image.height
+                total_pixels += pixels
+                if pixels > MAX_IMAGE_PIXELS or total_pixels > MAX_IMAGE_TOTAL_PIXELS:
+                    raise ImageConvertError("图片像素总量超过安全上限，请缩小图片后重试。")
+                frame = ImageOps.exif_transpose(image)
+                rgb = _flatten(frame)
+                width_pt, height_pt = _page_points(frame)
+                page = document.new_page(width=width_pt, height=height_pt)
+                frame_path = os.path.join(workdir, f"frame_{index}.png")
+                rgb.save(frame_path, "PNG")
+                page.insert_image(page.rect, filename=frame_path, keep_proportion=False)
+            if document.page_count <= 0:
+                raise ImageConvertError("图片没有可转换的帧。")
+            temp_pdf = os.path.join(workdir, "converted.pdf")
+            document.save(temp_pdf, deflate=True)
+            page_count = document.page_count
+            os.replace(temp_pdf, dst)
+        return {"pages": page_count,
                 "converter": "图片",
                 "first_frame_only": first_only}
     except ImageConvertError:
@@ -104,12 +126,8 @@ def image_to_pdf(src: str, dst: str) -> Dict[str, object]:
     except Exception as exc:
         raise ImageConvertError(f"图片转换失败：{exc}") from exc
     finally:
-        document.close()
-        for path in frame_files:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+        if document is not None:
+            document.close()
         try:
             image.close()
         except Exception:

@@ -13,7 +13,9 @@ Windows 任务栏按 AppUserModelID 分组并取该组的图标。用 pythonw.ex
 * HICON 句柄由本模块持有，避免被 GC 提前销毁导致任务栏回退到宿主图标。
 """
 
+import atexit
 import ctypes
+import logging
 import os
 from ctypes import wintypes
 
@@ -34,17 +36,34 @@ GA_ROOT = 2
 
 _user32 = ctypes.windll.user32
 _shell32 = ctypes.windll.shell32
+_logger = logging.getLogger("pdf_duplex")
 _user32.LoadImageW.restype = wintypes.HANDLE
+_user32.LoadImageW.argtypes = [wintypes.HANDLE, wintypes.LPCWSTR, wintypes.UINT,
+                               ctypes.c_int, ctypes.c_int, wintypes.UINT]
 _user32.SendMessageW.restype = ctypes.c_ssize_t
 _user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+_user32.GetAncestor.restype = wintypes.HWND
+_user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+_user32.SetClassLongPtrW.restype = ctypes.c_size_t
+_user32.SetClassLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_size_t]
+_user32.DestroyIcon.argtypes = [wintypes.HICON]
+_user32.DestroyIcon.restype = wintypes.BOOL
+_shell32.SetCurrentProcessExplicitAppUserModelID.argtypes = [wintypes.LPCWSTR]
+_shell32.SetCurrentProcessExplicitAppUserModelID.restype = ctypes.c_long
+_shell32.GetCurrentProcessExplicitAppUserModelID.argtypes = [ctypes.c_void_p]
+_shell32.GetCurrentProcessExplicitAppUserModelID.restype = ctypes.c_long
 
 
 def set_process_app_user_model_id(aumid: str = APP_USER_MODEL_ID) -> bool:
     """设置当前进程的显式 AUMID（必须在创建窗口前调用）。"""
     try:
-        _shell32.SetCurrentProcessExplicitAppUserModelID(ctypes.c_wchar_p(aumid))
+        result = _shell32.SetCurrentProcessExplicitAppUserModelID(ctypes.c_wchar_p(aumid))
+        if result != 0:
+            _logger.warning("设置 AppUserModelID 失败：HRESULT=0x%08X", result & 0xFFFFFFFF)
+            return False
         return True
-    except Exception:
+    except Exception as exc:
+        _logger.warning("设置 AppUserModelID 异常：%s", exc)
         return False
 
 
@@ -79,11 +98,12 @@ def apply_window_icon(window, ico_path: str) -> dict:
         return handles
     try:
         window.iconbitmap(ico_path)      # 标题栏默认图标（Tk 路径）
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("设置 Tk 窗口图标失败：%s", exc)
     try:
         hwnd = _user32.GetAncestor(int(window.winfo_id()), GA_ROOT)
-    except Exception:
+    except Exception as exc:
+        _logger.warning("获取顶层窗口句柄失败：%s", exc)
         hwnd = 0
     for name, size in (("small", 16), ("big", 32)):
         hicon = load_icon(ico_path, size)
@@ -100,6 +120,18 @@ def apply_window_icon(window, ico_path: str) -> dict:
         try:
             _user32.SetClassLongPtrW(hwnd, GCLP_HICON, handles.get("big") or 0)
             _user32.SetClassLongPtrW(hwnd, GCLP_HICONS, handles.get("small") or 0)
+        except Exception as exc:
+            _logger.warning("设置窗口类图标失败：%s", exc)
+    return handles
+
+
+def _release_icons() -> None:
+    while _ICON_HANDLES:
+        hicon = _ICON_HANDLES.pop()
+        try:
+            _user32.DestroyIcon(hicon)
         except Exception:
             pass
-    return handles
+
+
+atexit.register(_release_icons)

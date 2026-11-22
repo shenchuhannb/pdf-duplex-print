@@ -15,6 +15,7 @@ DuplexPrintApp 由下列 mixin 组合而成（纯机械拆分，逻辑不变）�
 
 
 import ctypes
+import copy
 import logging
 import os
 import queue
@@ -145,6 +146,7 @@ class DuplexPrintApp(FilesPanelMixin, SettingsPanelMixin, PreviewMixin, LogPanel
             layout_scheme if layout_scheme in LAYOUT_SCHEMES else DEFAULT_LAYOUT_SCHEME)
         self.log_drawer_open = True      # 日志常驻展开，不再折叠
         self.settings = load_settings()
+        self._settings_baseline = copy.deepcopy(self.settings)
         self.style_key = _theme.resolve_style(style or str(self.settings.get("ui_style") or ""))
         self.colors = _theme.apply_theme(root, self.style_key)
         # 高 DPI 系数：100% 时为 1.0，125%/150% 时按比例放大固定像素间距与行高；

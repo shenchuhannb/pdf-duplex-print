@@ -16,6 +16,14 @@ import sys
 
 GWL_WNDPROC = -4
 WM_ERASEBKGND = 0x0014
+WM_SIZE = 0x0005
+SIZE_MINIMIZED = 1
+DWMWA_TRANSITIONS_FORCEDISABLED = 3
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOZORDER = 0x0004
+SWP_NOACTIVATE = 0x0010
+SWP_FRAMECHANGED = 0x0020
 
 # hwnd -> (WNDPROC 回调, 原窗口过程, 底色画刷)；必须常驻引用防止回调被 GC。
 # 高级设置等对话框每次打开是新 hwnd，旧条目仅几百字节，保留不清理。
@@ -53,6 +61,12 @@ def _install(win, background: str) -> None:
     user32.GetClientRect.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
     user32.FillRect.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
                                 ctypes.c_void_p]
+    user32.GetDC.restype = ctypes.c_void_p
+    user32.GetDC.argtypes = [ctypes.c_void_p]
+    user32.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    user32.RedrawWindow.restype = ctypes.c_int
+    user32.RedrawWindow.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                                    ctypes.c_void_p, ctypes.c_uint]
     gdi32.CreateSolidBrush.restype = ctypes.c_void_p
     gdi32.CreateSolidBrush.argtypes = [ctypes.c_ulong]
 
@@ -67,7 +81,27 @@ def _install(win, background: str) -> None:
     brush = gdi32.CreateSolidBrush(colorref)
     if not brush:
         return
+
+    # 最大化/还原的系统过渡会先展示 DWM 尚未重绘的黑色表面。
+    try:
+        dwmapi = ctypes.windll.dwmapi
+        dwmapi.DwmSetWindowAttribute.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_uint]
+        disabled = ctypes.c_int(1)
+        dwmapi.DwmSetWindowAttribute(
+            ctypes.c_void_p(hwnd), DWMWA_TRANSITIONS_FORCEDISABLED,
+            ctypes.byref(disabled), ctypes.sizeof(disabled))
+    except Exception:
+        pass
     old_proc = [None]
+
+    def _commit_frame():
+        try:
+            user32.RedrawWindow(
+                ctypes.c_void_p(hwnd), None, None,
+                0x0001 | 0x0004 | 0x0080 | 0x0100 | 0x0400)
+        except Exception:
+            pass
 
     def _wnd_proc(h, msg, wparam, lparam):
         if msg == WM_ERASEBKGND and wparam:  # wparam 为目标 DC
@@ -76,6 +110,20 @@ def _install(win, background: str) -> None:
             user32.FillRect(ctypes.c_void_p(wparam), ctypes.byref(rect),
                             ctypes.c_void_p(brush))
             return 1
+        if msg == WM_SIZE and wparam != SIZE_MINIMIZED:
+            hdc = user32.GetDC(h)
+            if hdc:
+                rect = RECT()
+                user32.GetClientRect(h, ctypes.byref(rect))
+                user32.FillRect(ctypes.c_void_p(hdc), ctypes.byref(rect),
+                                ctypes.c_void_p(brush))
+                user32.ReleaseDC(h, ctypes.c_void_p(hdc))
+            result = user32.CallWindowProcW(old_proc[0], h, msg, wparam, lparam)
+            try:
+                win.after_idle(_commit_frame)
+            except Exception:
+                pass
+            return result
         return user32.CallWindowProcW(old_proc[0], h, msg, wparam, lparam)
 
     callback = WNDPROC(_wnd_proc)

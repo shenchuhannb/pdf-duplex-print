@@ -31,7 +31,10 @@ try:
 except ImportError:  # pragma: no cover
     Image = None
 
-from core_utils import PrintError, PrinterOfflineError, PrintTimeoutError, CancelledByUser
+from core_utils import (
+    PrintError, PrinterOfflineError, PrintTimeoutError, PrintJobUnknownError,
+    CancelledByUser,
+)
 
 JOB_POLL_INTERVAL = 3.0              # 打印队列轮询间隔（秒；spooler 本地调用，不探测 USB 设备）
 PRINTER_STATUS_POLL_INTERVAL = 3.0   # 打印机状态检查间隔（秒；同为 spooler 本地调用，可安全高频）
@@ -249,13 +252,11 @@ def _job_status_flags(job: dict) -> int:
     if win32print is None:
         return 0
     status = job.get("Status")
-    if isinstance(status, int):
-        return status
+    flags = status if isinstance(status, int) else 0
     text = f"{status or ''} {job.get('pStatus') or ''}".lower()
     # 单词按词匹配，避免厂商自定义状态文本的子串误判（如 "...error..." 类提示语）；
     # 双词短语仍按子串匹配（分词后无法直接比较）。
     words = set(re.findall(r"[a-z]+", text))
-    flags = 0
     mapping = (
         ("printing", win32print.JOB_STATUS_PRINTING),
         ("printed", win32print.JOB_STATUS_PRINTED),
@@ -685,15 +686,14 @@ def wait_for_print_job(
 ) -> bool:
     """监听打印队列，直到本阶段任务完成。
 
-    完成判定（任一满足）：任务已从队列消失 / PRINTED / COMPLETE /
-    PagesPrinted >= TotalPages。
+    完成判定（任一满足）：PRINTED / COMPLETE / PagesPrinted >= TotalPages。
     脱机、缺纸、任务错误时抛出异常；用户中止返回 False。
-    队列监听超时由调用方降级为固定延时。
+    队列消失、持续读取异常或超时只进入 UNKNOWN/超时，不得自动判定出纸成功。
     """
     if win32print is None:
         raise PrintError("缺少 pywin32 库，请执行：pip install pywin32")
 
-    deadline = time.time() + JOB_TIMEOUT_SECONDS
+    deadline = time.monotonic() + JOB_TIMEOUT_SECONDS
     last_log = 0.0
     paused_hint_logged = False
     open_failures = 0
@@ -709,11 +709,10 @@ def wait_for_print_job(
             deadline += JOB_POLL_INTERVAL
             time.sleep(JOB_POLL_INTERVAL)
             continue
-        if time.time() > deadline:
+        if time.monotonic() > deadline:
             raise PrintTimeoutError(
                 "监听打印队列超时（任务可能卡在队列中）。"
-                "将改用固定延时兜底继续流程；若经常超时，请检查打印机是否缺纸、卡纸，"
-                "或直接在界面上改用「固定延时」模式。"
+                "请检查打印机、纸张和 Windows 队列；确认本阶段已完整出纸后才能继续。"
             )
 
         try:
@@ -730,7 +729,7 @@ def wait_for_print_job(
         open_failures = 0
 
         try:
-            now = time.time()
+            now = time.monotonic()
             if now - last_printer_status_check >= PRINTER_STATUS_POLL_INTERVAL:
                 printer_info = win32print.GetPrinter(handle, 2) or {}
                 printer_status = int(printer_info.get("Status") or 0)
@@ -754,25 +753,15 @@ def wait_for_print_job(
             try:
                 job = win32print.GetJob(handle, job_id, 2)
             except Exception as exc:
-                # 任务消失通常意味着已出纸完成；但瞬时的 RPC/权限故障（安全软件
-                # 拦截等）同样会让 GetJob 抛异常。连续多次失败才判定“任务已出队列”，
-                # 避免误判完成而提前提示翻面，导致整批正反错位。
+                # 任务消失可能是完成，也可能是删除、RPC 或权限故障；
+                # 无法区分时必须进入 UNKNOWN，不能把不确定状态当成出纸成功。
                 get_job_failures += 1
                 if get_job_failures >= 3:
-                    if job_observed:
-                        _logger.info(
-                            "打印任务已从队列消失：printer=%s job_id=%s failures=%d",
-                            printer_name, job_id, get_job_failures)
-                        return True
-                    if poll_delayed:
-                        # OpenPrinter 重试推迟了首次 GetJob，快速完成的打印机
-                        # （虚拟打印机/“直接打印到打印机”模式）可能已出队列，
-                        # 无法区分“完成”与“未入队”，按完成处理并留痕。
-                        _logger.warning(
-                            "首次观察任务前队列句柄打开曾失败，任务可能已快速完成："
-                            "printer=%s job_id=%s failures=%d",
-                            printer_name, job_id, get_job_failures)
-                        return True
+                    if job_observed or poll_delayed:
+                        raise PrintJobUnknownError(
+                            f"无法确认打印任务 #{job_id} 的状态：连续读取队列失败。"
+                            "请检查 Windows 打印队列和实际出纸，未确认前不会继续后续阶段。"
+                        ) from exc
                     _try_cancel_job(printer_name, job_id)
                     raise PrintError(
                         f"打印任务 #{job_id} 提交后未能在队列中观察到，"
@@ -792,7 +781,8 @@ def wait_for_print_job(
             if flags & getattr(win32print, "JOB_STATUS_OFFLINE", 0):
                 raise PrinterOfflineError(f"打印机「{printer_name}」脱机，请检查连接后重试。")
             if flags & (getattr(win32print, "JOB_STATUS_ERROR", 0)
-                        | getattr(win32print, "JOB_STATUS_PAPEROUT", 0)):
+                        | getattr(win32print, "JOB_STATUS_PAPEROUT", 0)
+                        | getattr(win32print, "JOB_STATUS_DELETED", 0)):
                 _try_cancel_job(printer_name, job_id)
                 raise PrintError("打印任务出错（可能缺纸、卡纸或打印机报错），请检查设备后重试。")
             if flags & (getattr(win32print, "JOB_STATUS_PRINTED", 0x80)
@@ -807,12 +797,15 @@ def wait_for_print_job(
             if total > 0 and printed >= total:
                 return True
 
-            now = time.time()
+            now = time.monotonic()
             if log and now - last_log >= 5.0:
                 last_log = now
                 log(f"正在打印：已出纸 {printed}/{total} 页…" if total > 0 else "正在打印…")
         finally:
-            win32print.ClosePrinter(handle)
+            try:
+                win32print.ClosePrinter(handle)
+            except Exception as exc:
+                _logger.warning("关闭打印队列句柄失败：%s", exc)
 
         time.sleep(JOB_POLL_INTERVAL)
 
@@ -895,45 +888,55 @@ def devmode_field_updates(options: PrinterOptions) -> Dict[str, object]:
 
 
 def _create_printer_dc(printer_name: str, options: PrinterOptions):
-    """创建打印机设备上下文（HDC），并通过 DEVMODE 应用打印选项。
-
-    DEVMODE 获取/校验失败时退回驱动默认设置，不影响基本打印。
-    返回 (HDC, 需要保持引用的 DEVMODE 缓冲区)。
-    """
+    """创建 HDC，并确认驱动实际接受手动双面所需的关键 DEVMODE 字段。"""
     devmode_buffer = None
     devmode_ptr = None
     printer_handle = wintypes.HANDLE()
     opened = False
 
     try:
-        if _spool.OpenPrinterW(printer_name, ctypes.byref(printer_handle), None):
-            opened = True
-            size = _spool.DocumentPropertiesW(None, printer_handle, printer_name, None, None, 0)
-            if size > 0:
-                devmode_buffer = ctypes.create_string_buffer(size)
-                devmode_ptr = ctypes.cast(devmode_buffer, ctypes.POINTER(_DEVMODEW))
-                if _spool.DocumentPropertiesW(
-                    None, printer_handle, printer_name, devmode_ptr, None, DM_OUT_BUFFER
-                ) > 0:
-                    devmode = devmode_ptr.contents
-                    updates = devmode_field_updates(options)
-                    for name, value in updates.items():
-                        if name == "dmFields":
-                            continue
-                        setattr(devmode, name, value)
-                    devmode.dmFields |= int(updates["dmFields"])
-                    # 让驱动校验一次修改后的 DEVMODE（失败也不影响后续创建 DC）
-                    _spool.DocumentPropertiesW(
-                        None, printer_handle, printer_name,
-                        devmode_ptr, devmode_ptr, DM_IN_BUFFER | DM_OUT_BUFFER,
-                    )
-                else:
-                    devmode_ptr = None
-                    devmode_buffer = None
-    except Exception as exc:
-        _logger.warning("读取打印机 DEVMODE 失败，将使用驱动默认设置：%s", exc)
+        if not _spool.OpenPrinterW(printer_name, ctypes.byref(printer_handle), None):
+            raise PrintError(f"无法打开打印机以读取 DEVMODE：{printer_name}\n{_win_error_text()}")
+        opened = True
+        size = _spool.DocumentPropertiesW(None, printer_handle, printer_name, None, None, 0)
+        if size <= 0:
+            raise PrintError(f"无法读取打印机 DEVMODE 大小：{printer_name}\n{_win_error_text()}")
+        devmode_buffer = ctypes.create_string_buffer(size)
+        devmode_ptr = ctypes.cast(devmode_buffer, ctypes.POINTER(_DEVMODEW))
+        if _spool.DocumentPropertiesW(
+            None, printer_handle, printer_name, devmode_ptr, None, DM_OUT_BUFFER
+        ) <= 0:
+            raise PrintError(f"无法读取打印机 DEVMODE：{printer_name}\n{_win_error_text()}")
+        devmode = devmode_ptr.contents
+        updates = devmode_field_updates(options)
+        for name, value in updates.items():
+            if name != "dmFields":
+                setattr(devmode, name, value)
+        devmode.dmFields |= int(updates["dmFields"])
+        if _spool.DocumentPropertiesW(
+            None, printer_handle, printer_name,
+            devmode_ptr, devmode_ptr, DM_IN_BUFFER | DM_OUT_BUFFER,
+        ) <= 0:
+            raise PrintError(
+                "打印机驱动拒绝了单面、单份、单版等必要设置；"
+                "为避免错误出纸，已停止打印。"
+            )
+        actual = devmode_ptr.contents
+        for name in ("dmDuplex", "dmCopies", "dmNup", "dmPaperSize", "dmPaperWidth",
+                     "dmPaperLength", "dmOrientation", "dmColor", "dmDefaultSource",
+                     "dmPrintQuality"):
+            if name in updates and int(getattr(actual, name)) != int(updates[name]):
+                raise PrintError(
+                    f"打印机驱动未接受必要字段 {name}；为避免错误出纸，已停止打印。"
+                )
+    except PrintError:
         devmode_ptr = None
         devmode_buffer = None
+        raise
+    except Exception as exc:
+        devmode_ptr = None
+        devmode_buffer = None
+        raise PrintError(f"配置打印机 DEVMODE 失败：{exc}") from exc
     finally:
         if opened:
             _spool.ClosePrinter(printer_handle)
@@ -986,6 +989,7 @@ class GdiPrinter:
         stop_event: threading.Event,
         on_page: Optional[Callable[[int, int, int], None]] = None,
         pause_event: Optional[threading.Event] = None,
+        on_job_start: Optional[Callable[[int], None]] = None,
     ) -> int:
         """按 side_order 顺序打印 PDF 的页面（1 基），返回打印任务 ID。
 
@@ -1004,7 +1008,7 @@ class GdiPrinter:
             while True:
                 try:
                     return self._print_once(doc, side_order, job_name, stop_event,
-                                            on_page, pause_event)
+                                            on_page, pause_event, on_job_start)
                 except CancelledByUser:
                     raise
                 except PrintError:
@@ -1023,6 +1027,7 @@ class GdiPrinter:
         stop_event: threading.Event,
         on_page: Optional[Callable[[int, int, int], None]] = None,
         pause_event: Optional[threading.Event] = None,
+        on_job_start: Optional[Callable[[int], None]] = None,
     ) -> int:
         """单次打印尝试；失败时自行 AbortDoc / 取消残留任务后再抛出。"""
         hdc = None
@@ -1065,6 +1070,8 @@ class GdiPrinter:
             if job_id <= 0:
                 raise PrintError(f"创建打印任务失败：{_win_error_text()}")
             self.last_job_id = job_id
+            if on_job_start is not None:
+                on_job_start(job_id)
             job_started = True
             _logger.info("已创建打印任务：printer=%s job_id=%s name=%s pages=%s",
                          self.printer_name, job_id, job_name, len(side_order))

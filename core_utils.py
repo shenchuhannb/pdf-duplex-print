@@ -41,7 +41,11 @@ class PrinterOfflineError(PrintError):
 
 
 class PrintTimeoutError(PrintError):
-    """监听打印队列超时（调用方可用固定延时兜底）。"""
+    """监听打印队列超时。"""
+
+
+class PrintJobUnknownError(PrintError):
+    """任务状态无法确认，必须暂停后续双面阶段并由用户核查。"""
 
 
 class CancelledByUser(ToolError):

@@ -26,8 +26,8 @@ if not defined VENV (
     set "VENV=%ROOT%.venv"
     echo [INFO] No existing project environment found.
     echo [INFO] The new environment will be created at:
-    echo %VENV%
-    >"%ENV_CONFIG%" echo %VENV%
+    echo "%VENV%"
+    >"%ENV_CONFIG%" echo "%VENV%"
 )
 
 set "PY=%VENV%\Scripts\python.exe"
@@ -35,11 +35,11 @@ set "PYW=%VENV%\Scripts\pythonw.exe"
 
 if not exist "%PY%" (
     echo [INFO] Creating the virtual environment:
-    echo %VENV%
+    echo "%VENV%"
     if defined PDF_DUPLEX_PYTHON (
         if not exist "%PDF_DUPLEX_PYTHON%" (
             echo [ERROR] PDF_DUPLEX_PYTHON does not exist:
-            echo %PDF_DUPLEX_PYTHON%
+            echo "%PDF_DUPLEX_PYTHON%"
             pause
             exit /b 1
         )
@@ -67,18 +67,37 @@ if not exist "%PY%" (
 
 if not exist "%PY%" (
     echo [ERROR] The selected directory is not a valid Python venv:
-    echo %VENV%
+    echo "%VENV%"
     echo Use run.bat --reset-env to choose another directory.
     pause
     exit /b 1
 )
 
-echo [INFO] Checking project dependencies...
-"%PY%" -m pip install -r "%ROOT%requirements.txt"
+"%PY%" -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Dependency installation failed. Check Python and network access.
+    echo [ERROR] Python 3.10 or newer is required.
     pause
     exit /b 1
+)
+
+"%PY%" -c "import fitz, win32, PIL, tkinterdnd2" >nul 2>&1
+if errorlevel 1 (
+    echo [INFO] Installing missing project dependencies...
+    "%PY%" -m pip --version >nul 2>&1
+    if errorlevel 1 (
+        "%PY%" -m ensurepip --upgrade
+        if errorlevel 1 (
+            echo [ERROR] pip is unavailable and dependencies are missing.
+            pause
+            exit /b 1
+        )
+    )
+    "%PY%" -m pip install -r "%ROOT%requirements.txt"
+    if errorlevel 1 (
+        echo [ERROR] Dependency installation failed. Check Python and network access.
+        pause
+        exit /b 1
+    )
 )
 
 if not exist "%PYW%" set "PYW=%PY%"
@@ -97,8 +116,8 @@ for %%E in (
     if not defined VENV if exist "%%~E\Scripts\python.exe" (
         set "VENV=%%~E"
         echo [INFO] Detected existing environment:
-        echo %%~E
-        >"%ENV_CONFIG%" echo %%~E
+        echo "%%~E"
+        >"%ENV_CONFIG%" echo "%%~E"
     )
 )
 exit /b 0

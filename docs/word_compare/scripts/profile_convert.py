@@ -20,8 +20,8 @@ word_convert.conversion_processes()
 after = word_convert.conversion_processes()
 t_enum2 = time.perf_counter() - started
 started = time.perf_counter()
-word_convert._terminate_new_office(after)
-t_term = time.perf_counter() - started
+# 历史性能脚本不得强杀 Office；新实现只在转换异常时清理已登记归属的实例。
+t_term = 0.0
 
 started = time.perf_counter()
 subprocess.run([PROD_PY, "-c", "import sys; sys.path.insert(0, r'd:\\打印机软件'); import word_convert"],

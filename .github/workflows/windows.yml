@@ -1,0 +1,33 @@
+name: Windows regression
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Create virtual environment
+        run: python -m venv .venv
+      - name: Install dependencies
+        run: .venv\Scripts\python -m pip install -r requirements.txt -r requirements-dev.txt -r requirements-build.txt
+      - name: Run tests
+        run: .venv\Scripts\python -m pytest -q
+      - name: Run audit probes
+        run: |
+          .venv\Scripts\python docs/audit_evidence/pdf_config_probe.py
+          .venv\Scripts\python docs/audit_evidence/integration_probe.py
+      - name: Build and verify frozen app
+        shell: cmd
+        run: tools\build_exe.bat ".venv"

@@ -6,8 +6,12 @@
 """
 
 import json
+import logging
+import math
 import os
 import tempfile
+import time
+from contextlib import contextmanager
 from typing import Any, Dict
 
 from core_utils import SettingsError
@@ -107,6 +111,45 @@ _NUMERIC_LIMITS = {
 }
 
 
+_ENUM_CHOICES = {
+    "range_mode": {"all", "current", "custom", "odd", "even", "recent"},
+    "collate": {"collate", "uncollated"},
+    "color_mode": {"color", "gray", "mono"},
+    "print_quality": {"draft", "normal", "high"},
+    "scale_mode": {"shrink", "fit", "actual", "custom", "paper"},
+    "page_order": {"row", "column"},
+    "orientation": {"auto", "portrait", "landscape"},
+    "wait_mode": {"queue", "delay"},
+    "preview_view": {"single", "spread"},
+    "ui_style": {"A"},
+    "nup": {1, 2, 4, 6, 8, 9, 16},
+}
+_logger = logging.getLogger("pdf_duplex")
+
+
+def _parse_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off", ""}:
+            return False
+    return default
+
+
+def _quarantine_corrupt(target: str) -> str:
+    backup = f"{target}.corrupt-{int(time.time() * 1000)}"
+    try:
+        os.replace(target, backup)
+        return backup
+    except OSError:
+        return ""
+
+
 def settings_path() -> str:
     """返回配置文件路径（优先 APPDATA，失败时退回临时目录）。"""
     base = os.environ.get("APPDATA") or tempfile.gettempdir()
@@ -184,7 +227,7 @@ def migrate_print_flow(data: Dict[str, Any]) -> str:
         return "per_file"
     if legacy == "batch":
         # 旧版 _print_batch_backs 在缺省 per_file_pause 时按 True 处理
-        paused = bool(data.get("per_file_pause", True))
+        paused = _parse_bool(data.get("per_file_pause", True), True)
         return "batch_take" if paused else "batch_all"
     return DEFAULT_PRINT_FLOW
 
@@ -203,18 +246,25 @@ def _sanitize(data: Dict[str, Any]) -> Dict[str, Any]:
         value = data[key]
         default = result[key]
         if isinstance(default, bool):
-            result[key] = bool(value)
+            result[key] = _parse_bool(value, default)
         elif isinstance(default, (int, float)):
             try:
                 number = float(value)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if not math.isfinite(number):
                 continue
             low, high = _NUMERIC_LIMITS.get(key, (None, None))
             if low is not None:
                 number = min(max(number, low), high)
             result[key] = int(number) if isinstance(default, int) else number
+            if key in _ENUM_CHOICES and result[key] not in _ENUM_CHOICES[key]:
+                result[key] = default
         elif isinstance(default, str):
-            result[key] = str(value)
+            text = str(value)
+            if key in _ENUM_CHOICES and text not in _ENUM_CHOICES[key]:
+                continue
+            result[key] = text
         elif isinstance(default, list):
             if isinstance(value, list):
                 # 与 add_recent 的 limit 保持一致，避免读入比写出更宽松
@@ -225,37 +275,88 @@ def _sanitize(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def load_settings(path: str = "") -> Dict[str, Any]:
-    """读取配置；文件不存在/损坏时返回默认设置并保证不崩溃。"""
+    """读取配置；损坏文件隔离备份后安全回退默认值。"""
     target = path or settings_path()
     try:
         with open(target, "r", encoding="utf-8") as handle:
             data = json.load(handle)
+        if not isinstance(data, dict):
+            raise ValueError("配置根节点不是对象")
+        return _sanitize(data)
     except FileNotFoundError:
         return default_settings()
-    except (OSError, ValueError):
-        return default_settings()
-    return _sanitize(data)
-
-
-def save_settings(data: Dict[str, Any], path: str = "") -> str:
-    """保存配置（先写临时文件再替换，避免写一半导致文件损坏）。"""
-    target = path or settings_path()
-    try:
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        fd, temp_path = tempfile.mkstemp(prefix="settings_", suffix=".json",
-                                         dir=os.path.dirname(target))
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(_sanitize(data), handle, ensure_ascii=False, indent=2)
-            os.replace(temp_path, target)
-        finally:
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except OSError:
-                    pass
-        return target
     except OSError as exc:
+        _logger.warning("读取设置失败，使用默认设置：%s", exc)
+        return default_settings()
+    except (ValueError, TypeError, OverflowError) as exc:
+        backup = _quarantine_corrupt(target)
+        _logger.warning("设置文件损坏，已回退默认值：%s；备份=%s", exc, backup or " unavailable")
+        return default_settings()
+
+
+@contextmanager
+def _settings_write_lock(folder: str):
+    if os.name != "nt":
+        yield
+        return
+    import msvcrt
+
+    path = os.path.join(folder, ".settings.write.lock")
+    handle = open(path, "a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        for attempt in range(50):
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                break
+            except OSError:
+                if attempt == 49:
+                    raise SettingsError("另一个实例正在保存设置，请稍后重试。")
+                time.sleep(0.05)
+        yield
+    finally:
+        try:
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        handle.close()
+
+
+def save_settings(data: Dict[str, Any], path: str = "", base: Dict[str, Any] = None) -> str:
+    """加锁保存配置；提供 base 时只合并本实例相对基线修改的字段。"""
+    target = path or settings_path()
+    folder = os.path.dirname(target) or "."
+    try:
+        os.makedirs(folder, exist_ok=True)
+        with _settings_write_lock(folder):
+            if base is not None and os.path.isfile(target):
+                latest = load_settings(target)
+                changes = {key: value for key, value in data.items()
+                           if value != base.get(key)}
+                latest.update(changes)
+                data = latest
+            fd, temp_path = tempfile.mkstemp(prefix="settings_", suffix=".json",
+                                             dir=folder)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump(_sanitize(data), handle, ensure_ascii=False, indent=2,
+                              allow_nan=False)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temp_path, target)
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
+        return target
+    except (OSError, TypeError, ValueError, OverflowError) as exc:
         raise SettingsError(f"无法保存设置：{target}\n{exc}") from exc
 
 

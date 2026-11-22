@@ -13,7 +13,7 @@ Office 的排版引擎也有差异。结果是字体替换、符号乱码、分�
   3. Acrobat PDFMaker：依赖 Word 加载项且 ProgID 未注册，仅探测不启用。
 
 所有转换都在独立子进程里执行：
-  * 可以强制超时（kill 子进程 + 结束本次新起的 WINWORD/WPS），不会卡住界面；
+  * 可以强制超时（kill 子进程 + 仅清理 worker 明确登记归属的 Office 实例）；
   * COM 初始化发生在这个子进程自己的线程里（CoInitialize），不污染 GUI 线程。
 """
 
@@ -36,6 +36,7 @@ WPS_PROGIDS = ("KWPS.Application", "WPS.Application")
 WD_EXPORT_FORMAT_PDF = 17          # wdExportFormatPDF
 WD_DO_NOT_SAVE_CHANGES = 0
 OFFICE_PROCESS_NAMES = ("WINWORD.EXE", "wps.exe")
+OFFICE_PID_FILE_ENV = "PDF_DUPLEX_OFFICE_PID_FILE"
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
 # 转换产物的专用临时目录：固定前缀 + 时间戳 + PID，便于启动时识别上次残留。
@@ -485,7 +486,8 @@ def _inspect_doc_fonts_com(doc) -> dict:
     return result
 
 
-def font_warning_text(display_name: str, missing, limit: int = 6) -> str:
+def font_warning_text(display_name: str, missing, limit: int = 6,
+                      bitmap_missing_fonts: Optional[bool] = None) -> str:
     """把缺失字体列表转成一条用户提示；无缺失时返回空串（不产生日志）。"""
     names = [str(item).strip() for item in (missing or []) if str(item).strip()]
     if not names:
@@ -494,7 +496,13 @@ def font_warning_text(display_name: str, missing, limit: int = 6) -> str:
     if len(names) > limit:
         shown += f" 等 {len(names)} 个"
     prefix = f"{display_name}：" if display_name else ""
-    return (f"{prefix}缺少字体 {shown}。已按“缺字体位图化”导出，"
+    if bitmap_missing_fonts is True:
+        action = "已按“缺字体位图化”导出"
+    elif bitmap_missing_fonts is False:
+        action = "已使用普通 PDF 导出（当前 Office 不支持缺字体位图化）"
+    else:
+        action = "已继续导出 PDF"
+    return (f"{prefix}缺少字体 {shown}。{action}，"
             "若打印预览仍出现方框/乱码，请安装这些字体后重新导入。")
 
 
@@ -529,6 +537,53 @@ def _merge_font_info(result: dict, info: Optional[dict]) -> None:
 
 
 # ------------------------------------------------------------------ COM 转换
+def _worker_environment(pid_file: str) -> Dict[str, str]:
+    env = os.environ.copy()
+    env[OFFICE_PID_FILE_ENV] = pid_file
+    return env
+
+
+def _track_office_instance(app) -> None:
+    """只登记当前 worker 明确创建的 COM 实例，不推断其他进程的归属。"""
+    pid_file = os.environ.get(OFFICE_PID_FILE_ENV, "")
+    if not pid_file:
+        return
+    try:
+        import win32process
+
+        hwnd = int(getattr(app, "Hwnd", 0) or getattr(app, "HWND", 0))
+        if not hwnd:
+            return
+        _thread_id, pid = win32process.GetWindowThreadProcessId(hwnd)
+        if pid:
+            with open(pid_file, "a", encoding="ascii") as handle:
+                handle.write(f"{int(pid)}\n")
+                handle.flush()
+    except Exception:
+        # 无法证明 PID 归属时宁可保留进程，也不能退化为全局进程名清理。
+        pass
+
+
+def _terminate_owned_office(pid_file: str) -> None:
+    """异常时清理 worker 登记的实例；正常退出仍由 COM Quit 完成。"""
+    try:
+        with open(pid_file, "r", encoding="ascii") as handle:
+            owned = {int(line.strip()) for line in handle if line.strip().isdigit()}
+    except (OSError, ValueError):
+        owned = set()
+    current = conversion_processes()
+    _kill_pids(owned & current)
+    _remove_quietly(pid_file)
+
+
+def _disable_macros(app, required: bool = False) -> None:
+    try:
+        app.AutomationSecurity = 3  # msoAutomationSecurityForceDisable
+    except Exception:
+        if required:
+            raise WordConvertError("无法禁用 Word 宏，已中止文档打开。")
+
+
 def _dispatch(progids):
     import win32com.client
 
@@ -555,7 +610,7 @@ def _export_pdf(doc, dst: str) -> bool:
         doc.ExportAsFixedFormat(BitmapMissingFonts=True, **kwargs)
         return True
     except Exception:
-        _remove_quietly(dst)
+        # 第二次导出会覆盖目标；不要先删除调用方已有的有效 PDF。
         doc.ExportAsFixedFormat(**kwargs)
         return False
 
@@ -566,10 +621,12 @@ def convert_with_word(src: str, dst: str, app=None,
     created = app is None
     if created:
         app = _dispatch(WORD_PROGIDS)
+        _track_office_instance(app)
     doc = None
     try:
         app.Visible = False
         app.DisplayAlerts = 0
+        _disable_macros(app, required=True)
         doc = app.Documents.Open(src, ReadOnly=True, AddToRecentFiles=False,
                                  Visible=False)
         if font_info is not None:
@@ -607,10 +664,12 @@ def convert_with_wps(src: str, dst: str, app=None,
     created = app is None
     if created:
         app = _dispatch(WPS_PROGIDS)
+        _track_office_instance(app)
     doc = None
     try:
         app.Visible = False
         app.DisplayAlerts = 0
+        _disable_macros(app)
         doc = app.Documents.Open(src, ReadOnly=True, AddToRecentFiles=False)
         try:
             doc.ExportAsFixedFormat(OutputFileName=dst,
@@ -700,11 +759,13 @@ def _get_app(name: str, progids, apps: dict):
     app = apps.get(name)
     if app is None:
         app = _dispatch(progids)
+        _track_office_instance(app)
         try:
             app.Visible = False
             app.DisplayAlerts = 0
         except Exception:
             pass
+        _disable_macros(app, required=(name == "Word"))
         apps[name] = app
     return app
 
@@ -746,6 +807,19 @@ def _unembedded_font_names(doc) -> List[str]:
     return sorted(gaps)
 
 
+def _output_signature(path: str):
+    try:
+        stat = os.stat(path)
+        return stat.st_mtime_ns, stat.st_size
+    except OSError:
+        return None
+
+
+def _remove_output_if_changed(path: str, previous) -> None:
+    if _output_signature(path) != previous:
+        _remove_quietly(path)
+
+
 def _probe_output(dst: str):
     """校验导出结果，返回 ``(页数, 未嵌入字体列表)``（0 页视为失败）。"""
     if not os.path.isfile(dst) or os.path.getsize(dst) == 0:
@@ -779,6 +853,7 @@ def _run_batch(manifest_path: str, results_path: str) -> int:
             for item in items:
                 started = time.perf_counter()
                 result = {"iid": item.get("iid")}
+                previous_output = _output_signature(item["dst"])
                 errors: List[str] = []
                 # 转换前预检（.docx 走 zip 解析；.doc 在 COM 内取样）：
                 # 单文件预检失败只影响该文件提示，不中断整批。
@@ -793,11 +868,14 @@ def _run_batch(manifest_path: str, results_path: str) -> int:
                             app = _get_app(name, progids, apps)
                             func(item["src"], item["dst"], app=app,
                                  font_info=font_info)
+                            if previous_output is not None and \
+                                    _output_signature(item["dst"]) == previous_output:
+                                raise WordConvertError("输出 PDF 未被本次转换更新")
                             pages, gaps = _probe_output(item["dst"])
                         except Exception as exc:
                             errors.append(f"{name} 转换失败：{exc}")
                             _drop_app(apps, name)     # 实例可能已损坏，下次重建
-                            _remove_quietly(item["dst"])
+                            _remove_output_if_changed(item["dst"], previous_output)
                             continue
                         result.update(ok=True, converter=name, pages=pages,
                                       seconds=round(time.perf_counter() - started, 2))
@@ -812,6 +890,8 @@ def _run_batch(manifest_path: str, results_path: str) -> int:
                     result.update(ok=False, error=f"转换失败：{exc}")
                 _merge_font_info(result, precheck)
                 _merge_font_info(result, font_info)
+                if "bitmap_missing_fonts" in font_info:
+                    result["bitmap_missing_fonts"] = font_info["bitmap_missing_fonts"]
                 out.write(json.dumps(result, ensure_ascii=False) + "\n")
                 out.flush()
     finally:
@@ -847,8 +927,9 @@ def _retry_remaining(remaining: List[dict], results: dict,
                  "converter": info.get("converter"),
                  "pages": info.get("pages"),
                  "seconds": round(time.perf_counter() - started, 2)}
-        for key in ("missing_fonts", "font_check", "unembedded_fonts"):
-            if info.get(key):
+        for key in ("missing_fonts", "font_check", "unembedded_fonts",
+                    "bitmap_missing_fonts"):
+            if key in info and info.get(key) is not None:
                 entry[key] = info[key]
         results[iid] = entry
 
@@ -867,71 +948,117 @@ def convert_batch(items: List[dict], timeout_per_file: float = 180.0,
     """
     if not items:
         return {}
+    expected_iids = set()
+    initial_outputs = {}
     for item in items:
+        iid = item.get("iid")
+        if iid is None or str(iid) == "" or iid in expected_iids:
+            raise WordConvertError("批量转换的每个文件都必须具有唯一 iid。")
+        expected_iids.add(iid)
         item["src"] = os.path.abspath(item["src"])
         item["dst"] = os.path.abspath(item["dst"])
-        folder = os.path.dirname(item["dst"])
-        if folder:
-            os.makedirs(folder, exist_ok=True)
+        if os.path.normcase(item["src"]) == os.path.normcase(item["dst"]):
+            raise WordConvertError("源文件与输出 PDF 不能是同一路径。")
+        folder = os.path.dirname(item["dst"]) or "."
+        os.makedirs(folder, exist_ok=True)
+        initial_outputs[iid] = _output_signature(item["dst"])
 
     batch_dir = create_temp_dir()
     manifest_path = os.path.join(batch_dir, BATCH_MANIFEST_NAME)
     results_path = os.path.join(batch_dir, BATCH_RESULTS_NAME)
+    pid_file = os.path.join(batch_dir, "office_owners.txt")
+    stdout_path = os.path.join(batch_dir, "worker.stdout")
+    stderr_path = os.path.join(batch_dir, "worker.stderr")
     payload = [{"iid": item.get("iid"), "src": item["src"], "dst": item["dst"],
                 "kind": item.get("kind", "word")} for item in items]
     with open(manifest_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False)
-    open(results_path, "w", encoding="utf-8").close()
+    for path in (results_path, pid_file):
+        open(path, "w", encoding="utf-8").close()
 
-    before = conversion_processes()
     command = _worker_command(
         python_exe, "--batch", manifest_path, "--results", results_path)
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               creationflags=CREATE_NO_WINDOW)
     results: dict = {}
     handled = 0
-    last_activity = time.time()
+    last_activity = time.monotonic()
     timed_out = False
+    out = err = b""
+    process = None
+    stdout_handle = None
+    stderr_handle = None
     try:
+        stdout_handle = open(stdout_path, "w+b")
+        stderr_handle = open(stderr_path, "w+b")
+        process = subprocess.Popen(
+            command, stdout=stdout_handle, stderr=stderr_handle,
+            creationflags=CREATE_NO_WINDOW, env=_worker_environment(pid_file))
         while True:
             if stop_event is not None and stop_event.is_set():
                 raise BatchCancelled("用户中止了转换。")
-            lines = []
             try:
                 with open(results_path, "r", encoding="utf-8") as handle:
-                    lines = handle.read().splitlines()
+                    lines = handle.read().splitlines(keepends=True)
             except OSError:
                 lines = []
             while handled < len(lines):
-                try:
-                    one = json.loads(lines[handled])
-                except ValueError:
-                    handled += 1
-                    continue
+                raw = lines[handled]
+                if not raw.endswith("\n"):
+                    break  # 半行仍在写入，下轮继续读取同一位置。
                 handled += 1
-                results[one.get("iid")] = one
-                last_activity = time.time()
+                try:
+                    one = json.loads(raw)
+                except ValueError:
+                    continue
+                iid = one.get("iid")
+                if iid not in expected_iids or iid in results:
+                    continue
+                results[iid] = one
+                last_activity = time.monotonic()
                 if on_result is not None:
                     on_result(one)
             if len(results) >= len(items):
                 break
             if process.poll() is not None:
                 break
-            if time.time() - last_activity > timeout_per_file:
+            if time.monotonic() - last_activity > timeout_per_file:
                 timed_out = True
                 break
             time.sleep(0.2)
+    except BatchCancelled:
+        for item in items:
+            if item.get("iid") not in results:
+                _remove_output_if_changed(item["dst"], initial_outputs[item.get("iid")])
+        raise
     finally:
-        if process.poll() is None:
+        killed = False
+        if process is not None and process.poll() is None:
+            killed = True
             try:
                 process.kill()
             except Exception:
                 pass
-        try:
-            out, err = process.communicate(timeout=15)
-        except Exception:
-            out, err = b"", b""
-        _terminate_new_office(before)
+        if process is not None:
+            try:
+                process.communicate(timeout=15)
+            except Exception:
+                pass
+        if stdout_handle is not None:
+            stdout_handle.close()
+        if stderr_handle is not None:
+            stderr_handle.close()
+        for path, stream in ((stdout_path, "out"), (stderr_path, "err")):
+            try:
+                value = open(path, "rb").read()
+            except OSError:
+                value = b""
+            if stream == "out":
+                out = value
+            else:
+                err = value
+        if killed or (process is not None and process.returncode not in (0, 4)):
+            _terminate_owned_office(pid_file)
+        else:
+            _remove_quietly(pid_file)
         shutil.rmtree(batch_dir, ignore_errors=True)
 
     remaining = [item for item in items if item.get("iid") not in results]
@@ -945,8 +1072,6 @@ def convert_batch(items: List[dict], timeout_per_file: float = 180.0,
         for item in remaining:
             results[item.get("iid")] = {"iid": item.get("iid"), "ok": False,
                                         "error": message}
-        # 批量子进程整体异常/超时：已成功的文件保留，未完成项回退单文件路径
-        # 各重试一次（同一 dst，不新建临时目录），重试结果统一再回调界面。
         _retry_remaining(remaining, results, timeout_per_file, python_exe, stop_event)
         if on_result is not None:
             for item in remaining:
@@ -994,15 +1119,6 @@ def conversion_processes() -> set:
     return pids
 
 
-def _terminate_new_office(before: set) -> None:
-    """结束“本次转换新起”的 WINWORD/WPS，避免残留后台进程。
-
-    只结束转换前不存在的 PID：用户原本开着的 Word 不会被误杀。
-    """
-    current = conversion_processes()
-    _kill_pids(current - before)
-
-
 def convert_file(src: str, dst: str, timeout: float = 180.0,
                  python_exe: Optional[str] = None) -> dict:
     """子进程执行转换：返回 {"converter": "Word"/"WPS", "pages": 页数}。
@@ -1013,37 +1129,72 @@ def convert_file(src: str, dst: str, timeout: float = 180.0,
     dst = os.path.abspath(dst)
     if not os.path.isfile(src):
         raise WordConvertError(f"找不到 Word 文件：{src}")
-    folder = os.path.dirname(dst)
-    if folder:
-        os.makedirs(folder, exist_ok=True)
-
-    before = conversion_processes()
+    if os.path.normcase(src) == os.path.normcase(dst):
+        raise WordConvertError("源文件与输出 PDF 不能是同一路径。")
+    folder = os.path.dirname(dst) or "."
+    os.makedirs(folder, exist_ok=True)
+    backup_path = ""
+    if os.path.isfile(dst):
+        fd, backup_path = tempfile.mkstemp(prefix=".office_backup_", suffix=".pdf", dir=folder)
+        os.close(fd)
+        os.replace(dst, backup_path)
+    fd, pid_file = tempfile.mkstemp(prefix=".office_owners_", suffix=".txt", dir=folder)
+    os.close(fd)
     command = _worker_command(python_exe, "--src", src, "--dst", dst)
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               creationflags=CREATE_NO_WINDOW)
+    process = None
+    out = err = b""
+    completed = False
     try:
-        out, err = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.communicate()
-        _terminate_new_office(before)
-        _remove_quietly(dst)
-        raise WordConvertError(
-            f"Word 转换超时（超过 {int(timeout)} 秒），已终止转换进程。")
-    _terminate_new_office(before)
-
-    if process.returncode != 0:
-        _remove_quietly(dst)
-        detail = _last_line(err) or _last_line(out) or f"退出码 {process.returncode}"
-        raise WordConvertError(f"Word 转换失败：{detail}")
-    if not os.path.isfile(dst) or os.path.getsize(dst) == 0:
-        raise WordConvertError("Word 转换失败：未生成 PDF 文件。")
+        process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            creationflags=CREATE_NO_WINDOW, env=_worker_environment(pid_file))
+        try:
+            out, err = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            try:
+                process.communicate(timeout=15)
+            except Exception:
+                pass
+            raise WordConvertError(
+                f"Word 转换超时（超过 {int(timeout)} 秒），已终止转换进程。")
+        if process.returncode != 0:
+            detail = _last_line(err) or _last_line(out) or f"退出码 {process.returncode}"
+            raise WordConvertError(f"Word 转换失败：{detail}")
+        if not os.path.isfile(dst) or os.path.getsize(dst) == 0:
+            raise WordConvertError("Word 转换失败：未生成 PDF 文件。")
+        completed = True
+    except WordConvertError:
+        raise
+    except Exception as exc:
+        raise WordConvertError(f"Word 转换进程失败：{exc}") from exc
+    finally:
+        if not completed:
+            if process is not None and process.poll() is None:
+                try:
+                    process.kill()
+                    process.communicate(timeout=15)
+                except Exception:
+                    pass
+            _terminate_owned_office(pid_file)
+            _remove_quietly(dst)
+            if backup_path:
+                try:
+                    os.replace(backup_path, dst)
+                except OSError:
+                    pass
+        else:
+            _remove_quietly(pid_file)
+            _remove_quietly(backup_path)
 
     converter = ""
+    bitmap_missing_fonts = None
     font_summary: dict = {"checked": False, "missing": []}
     for line in (out or "").decode("utf-8", "ignore").splitlines():
         if line.startswith("converter="):
             converter = line.split("=", 1)[1].strip()
+        elif line.startswith("bitmap_missing_fonts="):
+            bitmap_missing_fonts = line.rsplit("=", 1)[1].strip() == "1"
         elif line.startswith("font_info="):
             try:
                 parsed = json.loads(line.split("=", 1)[1])
@@ -1071,6 +1222,8 @@ def convert_file(src: str, dst: str, timeout: float = 180.0,
                if str(item).strip()]
     if missing:
         info["missing_fonts"] = sorted(set(missing))
+    if bitmap_missing_fonts is not None:
+        info["bitmap_missing_fonts"] = bitmap_missing_fonts
     if gaps:
         info["unembedded_fonts"] = gaps
     return info
@@ -1084,7 +1237,10 @@ def _last_line(blob) -> str:
 def _worker_command(python_exe: Optional[str], *args: str) -> List[str]:
     """Build the child command for source and PyInstaller-frozen launches."""
     executable = python_exe or sys.executable
-    if getattr(sys, "frozen", False):
+    executable_name = os.path.basename(executable).lower()
+    frozen_worker = getattr(sys, "frozen", False) or (
+        python_exe is not None and not executable_name.startswith("python"))
+    if frozen_worker:
         return [executable, "--word-convert-worker", *args]
     return [executable, os.path.abspath(__file__), *args]
 
@@ -1142,6 +1298,8 @@ def _main(argv=None) -> int:
                "missing": merged.get("missing_fonts") or []}
     print(f"converter={converter}")
     print("font_info=" + json.dumps(summary, ensure_ascii=False))
+    if "bitmap_missing_fonts" in font_info:
+        print(f"bitmap_missing_fonts={1 if font_info['bitmap_missing_fonts'] else 0}")
     return 0
 
 

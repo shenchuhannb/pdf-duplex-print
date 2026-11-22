@@ -105,7 +105,7 @@ class LogPanelMixin:
         sash.grid(row=4, column=0, sticky="ew", pady=(self._px(GAP_S), 0))
         sash.bind("<Button-1>", self._on_log_sash_press)
         sash.bind("<B1-Motion>", self._on_log_sash_drag)
-        sash.bind("<ButtonRelease-1>", lambda _e: setattr(self, "_log_user_sized", True))
+        sash.bind("<ButtonRelease-1>", self._on_log_sash_release)
         self.log_sash = sash
         grip = tk.Frame(sash, background=c["border_strong"], width=self._px(42),
                         height=self._px(2))
@@ -113,8 +113,7 @@ class LogPanelMixin:
         for widget in (sash, grip):
             widget.bind("<Button-1>", self._on_log_sash_press)
             widget.bind("<B1-Motion>", self._on_log_sash_drag)
-            widget.bind("<ButtonRelease-1>",
-                        lambda _e: setattr(self, "_log_user_sized", True))
+            widget.bind("<ButtonRelease-1>", self._on_log_sash_release)
 
         drawer = tk.Frame(parent, background=c["surface"], highlightthickness=1,
                           highlightbackground=c["border"], height=self._log_height)
@@ -203,6 +202,10 @@ class LogPanelMixin:
     def _on_log_sash_press(self, event) -> None:
         self._log_drag = (event.y_root, self._log_height)
 
+    def _on_log_sash_release(self, _event=None) -> None:
+        self._log_user_sized = True
+        self._log_drag = None
+
     def _on_log_sash_drag(self, event) -> None:
         if not self._log_drag:
             return
@@ -242,13 +245,24 @@ class LogPanelMixin:
             # grid 及其 Configure 回调属于 idle 工作；必须在恢复绘制前全部完成。
             self.root.update_idletasks()
         finally:
-            for target in paused_hwnds:
+            # 先在暂停状态累计整树失效，再逆序恢复（顶层最后），
+            # 防止子控件在顶层仍显示旧表面时抢先绘制。
+            win32gui.RedrawWindow(
+                hwnd, None, None,
+                win32con.RDW_INVALIDATE | win32con.RDW_ERASE |
+                win32con.RDW_FRAME | win32con.RDW_ALLCHILDREN)
+            for target in reversed(paused_hwnds):
                 win32gui.SendMessage(target, win32con.WM_SETREDRAW, 1, 0)
             win32gui.RedrawWindow(
                 hwnd, None, None,
                 win32con.RDW_INVALIDATE | win32con.RDW_ERASE |
                 win32con.RDW_FRAME | win32con.RDW_ALLCHILDREN |
                 win32con.RDW_UPDATENOW)
+            try:
+                # 等 DWM 消费完整帧；高频拖动自然收敛到刷新率。
+                ctypes.windll.dwmapi.DwmFlush()
+            except Exception:
+                pass
 
     def _set_log_height(self, value: int) -> None:
         """把日志高度夹在“最小值 … 窗口 1/3”之间。"""

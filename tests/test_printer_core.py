@@ -330,7 +330,7 @@ class TestWaitNeverObserved:
             printer_core.wait_for_print_job(
                 "P1007", 42, threading.Event())
 
-    def test_delayed_observation_falls_back_to_complete(self, monkeypatch):
+    def test_delayed_observation_requires_user_confirmation(self, monkeypatch):
         self._fake_queue(monkeypatch, open_fail_times=1)
-        assert printer_core.wait_for_print_job(
-            "P1007", 42, threading.Event()) is True
+        with pytest.raises(printer_core.PrintJobUnknownError):
+            printer_core.wait_for_print_job("P1007", 42, threading.Event())

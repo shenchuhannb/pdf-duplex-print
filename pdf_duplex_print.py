@@ -93,10 +93,17 @@ def _self_check(root, args, app) -> None:
     target = os.environ.get("PDF_DUPLEX_SELF_CHECK_FILE", "")
     if target:
         try:
-            with open(target, "w", encoding="utf-8") as handle:
+            folder = os.path.dirname(os.path.abspath(target))
+            os.makedirs(folder, exist_ok=True)
+            fd, temp_target = tempfile.mkstemp(prefix="self_check_", dir=folder)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write("\n".join(lines) + "\n")
+            os.replace(temp_target, target)
         except OSError:
-            pass
+            try:
+                os.remove(temp_target)
+            except (OSError, UnboundLocalError):
+                pass
     else:
         print("\n".join(lines))
     # 可选保持存活若干秒（窗口保持全透明），供外部脚本核对进程命令行后关闭
@@ -104,7 +111,7 @@ def _self_check(root, args, app) -> None:
         hold = float(os.environ.get("PDF_DUPLEX_SELF_CHECK_HOLD", "0") or 0)
     except ValueError:
         hold = 0.0
-    end = time.time() + max(0.0, hold)
+    end = time.time() + min(300.0, max(0.0, hold))
     while time.time() < end:
         try:
             root.update()
@@ -121,6 +128,13 @@ def _self_check(root, args, app) -> None:
     root.destroy()
 
 
+def _install_exception_logging(logger) -> None:
+    def log_unhandled(exc_type, exc_value, exc_tb):
+        logger.critical("未处理异常", exc_info=(exc_type, exc_value, exc_tb))
+
+    sys.excepthook = log_unhandled
+
+
 def main(argv=None) -> None:
     worker_args = list(sys.argv[1:] if argv is None else argv)
     if worker_args and worker_args[0] == "--word-convert-worker":
@@ -129,6 +143,7 @@ def main(argv=None) -> None:
 
     # 日志落盘（%APPDATA%\PDFDuplexPrint\logs\app.log），便于打印失败后排查
     logger = get_logger()
+    _install_exception_logging(logger)
     logger.info(
         "应用启动：executable=%s source=%s cwd=%s argv=%s",
         sys.executable, os.path.abspath(__file__), os.getcwd(), sys.argv[1:],
@@ -152,6 +167,8 @@ def main(argv=None) -> None:
 
     args = _parse_args(argv)
     root = _create_root()
+    root.report_callback_exception = lambda et, ev, tb: logger.error(
+        "Tk 回调异常", exc_info=(et, ev, tb))
     # 首帧不闪白：Tk 根窗口创建即映射，若此时界面还没构建完，用户会先看到
     # 一块默认白底空窗。这里先 withdraw，并用最终主题的底色填充，等全部控件、
     # ttk 样式、几何与首帧布局完成后，再一次性 deiconify（不产生二段跳）。

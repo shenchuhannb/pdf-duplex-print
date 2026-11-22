@@ -22,21 +22,45 @@ def log_directory() -> str:
     return os.path.join(base, _LOG_SUBDIR)
 
 
+class InterProcessRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """Windows 下用锁文件串行化多实例写入与滚动。"""
+
+    def emit(self, record):
+        if os.name != "nt":
+            return super().emit(record)
+        import msvcrt
+
+        lock_path = self.baseFilename + ".lock"
+        with open(lock_path, "a+b") as lock:
+            lock.seek(0, os.SEEK_END)
+            if lock.tell() == 0:
+                lock.write(b"\0")
+                lock.flush()
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                return super().emit(record)
+            finally:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+
+
 def get_logger() -> logging.Logger:
     """返回应用 logger；首次调用安装 RotatingFileHandler（幂等）。
 
     日志目录不可写时降级为 NullHandler，绝不影响打印主流程。
     """
     logger = logging.getLogger(APP_LOGGER_NAME)
-    if logger.handlers:
-        return logger
     logger.setLevel(logging.INFO)
     logger.propagate = False
+    if logger.handlers:
+        return logger
     try:
         os.makedirs(log_directory(), exist_ok=True)
-        handler = logging.handlers.RotatingFileHandler(
+        handler = InterProcessRotatingFileHandler(
             os.path.join(log_directory(), "app.log"),
             maxBytes=_MAX_BYTES, backupCount=_BACKUP_COUNT, encoding="utf-8",
+            delay=True,
         )
         handler.setFormatter(logging.Formatter(
             "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"

@@ -159,14 +159,15 @@ def test_log_sash_drag_commits_complete_frame(monkeypatch):
 
     harness._on_log_sash_drag(SimpleNamespace(y_root=534))
 
-    expected_flags = (ui_log.win32con.RDW_INVALIDATE | ui_log.win32con.RDW_ERASE |
-                      ui_log.win32con.RDW_FRAME | ui_log.win32con.RDW_ALLCHILDREN |
-                      ui_log.win32con.RDW_UPDATENOW)
+    invalidate_flags = (ui_log.win32con.RDW_INVALIDATE | ui_log.win32con.RDW_ERASE |
+                        ui_log.win32con.RDW_FRAME | ui_log.win32con.RDW_ALLCHILDREN)
+    expected_flags = invalidate_flags | ui_log.win32con.RDW_UPDATENOW
     redraw_off = [("redraw", hwnd, 0) for hwnd in (0x1234, 101, 102)]
-    redraw_on = [("redraw", hwnd, 1) for hwnd in (0x1234, 101, 102)]
+    redraw_on = [("redraw", hwnd, 1) for hwnd in (102, 101, 0x1234)]
     assert events == redraw_off + [
         ("height", 200),
         "layout",
+        ("present", invalidate_flags),
     ] + redraw_on + [("present", expected_flags)]
 
 
@@ -323,7 +324,6 @@ def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, u
         app._on_log_sash_press(SimpleNamespace(y_root=600))
         app._on_log_sash_drag(SimpleNamespace(y_root=-1000))
         root.update()
-
         assert app._log_height > app._log_min_height
         assert app._log_height <= root.winfo_height() // 3
         tree_area = app.tree.master
@@ -336,6 +336,8 @@ def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, u
             app.workspace.winfo_rooty() + app.workspace.winfo_height()
         if scheme == "stacked":
             assert not app.recent_frame.winfo_ismapped()
+        app._on_log_sash_release()
+        root.update()
 
         app._on_log_sash_press(SimpleNamespace(y_root=100))
         app._on_log_sash_drag(SimpleNamespace(y_root=1200))
@@ -345,6 +347,8 @@ def test_log_sash_resize_keeps_workspace_usable(tmp_path, monkeypatch, scheme, u
             assert app.recent_frame.winfo_ismapped()
         assert app.preview_frame.winfo_rooty() + app.preview_frame.winfo_height() <= \
             app.workspace.winfo_rooty() + app.workspace.winfo_height()
+        app._on_log_sash_release()
+        root.update()
     finally:
         app.shutting_down = True
         root.destroy()

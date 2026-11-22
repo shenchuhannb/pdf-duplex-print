@@ -107,7 +107,7 @@ Windows 上 Tk 的每个控件都是独立 HWND。内部拖动改变日志抽屉
 ### 已实施修复
 
 - 仅在日志分隔条拖动路径增加整帧提交，不改变窗口边框缩放、日志自动增高、工作区密度或打印逻辑。
-- 修改高度前向顶层窗口发送 `WM_SETREDRAW(0)`；调用 `update_idletasks()` 完成 grid 与 `<Configure>` 回调；在 `finally` 中发送 `WM_SETREDRAW(1)`，再用 `RedrawWindow(RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW)` 同步重绘整棵子窗口树。
+- 修改高度前先枚举顶层窗口及所有可见后代 HWND，逐个发送 `WM_SETREDRAW(0)`；调用 `update_idletasks()` 完成 grid 与 `<Configure>` 回调；在 `finally` 中逐个发送 `WM_SETREDRAW(1)`，再用 `RedrawWindow(RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW)` 同步重绘整棵子窗口树。隐藏控件不发送恢复消息，避免被 Win32 重新显示。
 - 非 Windows 或无法取得顶层 HWND 时保留原有高度修改路径；没有新增运行时依赖，也没有恢复被否决的指示线。
 
 ### 为什么此前修复未闭合

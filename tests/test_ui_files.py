@@ -105,10 +105,19 @@ def test_log_sash_drag_commits_complete_frame(monkeypatch):
             return 0x1234
 
         @staticmethod
-        def SendMessage(hwnd, message, wparam, _lparam):
+        def EnumChildWindows(hwnd, callback, _param):
             assert hwnd == 0x1234
+            for child in (101, 102, 103):
+                callback(child, None)
+
+        @staticmethod
+        def IsWindowVisible(hwnd):
+            return hwnd != 103
+
+        @staticmethod
+        def SendMessage(hwnd, message, wparam, _lparam):
             assert message == ui_log.win32con.WM_SETREDRAW
-            events.append(("redraw", wparam))
+            events.append(("redraw", hwnd, wparam))
 
         @staticmethod
         def RedrawWindow(hwnd, _rect, _region, flags):
@@ -129,14 +138,14 @@ def test_log_sash_drag_commits_complete_frame(monkeypatch):
     harness._on_log_sash_drag(SimpleNamespace(y_root=534))
 
     expected_flags = (ui_log.win32con.RDW_INVALIDATE | ui_log.win32con.RDW_ERASE |
-                      ui_log.win32con.RDW_ALLCHILDREN | ui_log.win32con.RDW_UPDATENOW)
-    assert events == [
-        ("redraw", 0),
+                      ui_log.win32con.RDW_FRAME | ui_log.win32con.RDW_ALLCHILDREN |
+                      ui_log.win32con.RDW_UPDATENOW)
+    redraw_off = [("redraw", hwnd, 0) for hwnd in (0x1234, 101, 102)]
+    redraw_on = [("redraw", hwnd, 1) for hwnd in (0x1234, 101, 102)]
+    assert events == redraw_off + [
         ("height", 200),
         "layout",
-        ("redraw", 1),
-        ("present", expected_flags),
-    ]
+    ] + redraw_on + [("present", expected_flags)]
 
 
 @pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")

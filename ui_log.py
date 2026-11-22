@@ -210,28 +210,45 @@ class LogPanelMixin:
         self._set_log_height_during_drag(start_height - (event.y_root - start_y))
 
     def _set_log_height_during_drag(self, value: int) -> None:
-        """暂停整窗绘制，布局落定后同步提交完整帧，避免子窗口新旧像素混杂。"""
+        """暂停整棵可见窗口树的绘制，布局后同步提交完整帧。"""
         if os.name != "nt":
             self._set_log_height(value)
             return
         try:
             hwnd = win32gui.GetAncestor(int(self.root.winfo_id()), win32con.GA_ROOT)
+            children = []
+
+            def collect_visible(child, _param):
+                if win32gui.IsWindowVisible(child):
+                    children.append(child)
+                return True
+
+            if hwnd:
+                # 必须先枚举再暂停：WM_SETREDRAW(0) 会让 IsWindowVisible 变为 False。
+                win32gui.EnumChildWindows(hwnd, collect_visible, None)
         except Exception:
             hwnd = 0
         if not hwnd:
             self._set_log_height(value)
             return
-        win32gui.SendMessage(hwnd, win32con.WM_SETREDRAW, 0, 0)
+        redraw_hwnds = [hwnd] + children
+        paused_hwnds = []
         try:
+            # 该消息只控制收到它的 HWND，不能靠顶层窗口自动覆盖 Tk 子控件。
+            for target in redraw_hwnds:
+                win32gui.SendMessage(target, win32con.WM_SETREDRAW, 0, 0)
+                paused_hwnds.append(target)
             self._set_log_height(value)
             # grid 及其 Configure 回调属于 idle 工作；必须在恢复绘制前全部完成。
             self.root.update_idletasks()
         finally:
-            win32gui.SendMessage(hwnd, win32con.WM_SETREDRAW, 1, 0)
+            for target in paused_hwnds:
+                win32gui.SendMessage(target, win32con.WM_SETREDRAW, 1, 0)
             win32gui.RedrawWindow(
                 hwnd, None, None,
                 win32con.RDW_INVALIDATE | win32con.RDW_ERASE |
-                win32con.RDW_ALLCHILDREN | win32con.RDW_UPDATENOW)
+                win32con.RDW_FRAME | win32con.RDW_ALLCHILDREN |
+                win32con.RDW_UPDATENOW)
 
     def _set_log_height(self, value: int) -> None:
         """把日志高度夹在“最小值 … 窗口 1/3”之间。"""

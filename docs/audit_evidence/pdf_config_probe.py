@@ -8,6 +8,12 @@ import tempfile
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
+# 英文 Windows（如 GitHub Actions runner）控制台是 cp1252，ensure_ascii=False 的
+# 中文结果会触发 UnicodeEncodeError；统一强制 UTF-8 输出，任何代码页下都可运行。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 import fitz
 from PIL import Image
 from image_convert import image_to_pdf

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 import ui_files
+import ui_log
 
 
 class ConversionHarness(ui_files.FilesPanelMixin):
@@ -78,6 +79,64 @@ def test_file_added_during_conversion_is_processed(tmp_path, monkeypatch):
     assert converted == [str(first), str(second)]
     assert completed == {"first", "second"}
     assert pumps == 2
+
+
+def test_log_sash_drag_commits_complete_frame(monkeypatch):
+    events = []
+
+    class FakeRoot:
+        def winfo_height(self):
+            return 720
+
+        def winfo_id(self):
+            return 100
+
+        def update_idletasks(self):
+            events.append("layout")
+
+    class FakeDrawer:
+        def configure(self, **kwargs):
+            events.append(("height", kwargs["height"]))
+
+    class FakeWin32Gui:
+        @staticmethod
+        def GetAncestor(hwnd, _ancestor):
+            assert hwnd == 100
+            return 0x1234
+
+        @staticmethod
+        def SendMessage(hwnd, message, wparam, _lparam):
+            assert hwnd == 0x1234
+            assert message == ui_log.win32con.WM_SETREDRAW
+            events.append(("redraw", wparam))
+
+        @staticmethod
+        def RedrawWindow(hwnd, _rect, _region, flags):
+            assert hwnd == 0x1234
+            events.append(("present", flags))
+
+    class LogDragHarness(ui_log.LogPanelMixin):
+        pass
+
+    harness = LogDragHarness()
+    harness.root = FakeRoot()
+    harness.log_drawer = FakeDrawer()
+    harness._log_min_height = 134
+    harness._log_height = 134
+    harness._log_drag = (600, 134)
+    monkeypatch.setattr(ui_log, "win32gui", FakeWin32Gui)
+
+    harness._on_log_sash_drag(SimpleNamespace(y_root=534))
+
+    expected_flags = (ui_log.win32con.RDW_INVALIDATE | ui_log.win32con.RDW_ERASE |
+                      ui_log.win32con.RDW_ALLCHILDREN | ui_log.win32con.RDW_UPDATENOW)
+    assert events == [
+        ("redraw", 0),
+        ("height", 200),
+        "layout",
+        ("redraw", 1),
+        ("present", expected_flags),
+    ]
 
 
 @pytest.mark.skipif(os.name != "nt", reason="透明 Tk 窗口回归仅在 Windows 桌面运行")

@@ -135,4 +135,4 @@ tools\build_exe.bat ".venv"
 - 仅支持 Windows（依赖 GDI 与 spooler）
 - 手动双面需要人工翻面一次；打印过程中请勿改变纸张方向或取出中间纸叠
 - 虚拟打印机（如 Microsoft Print to PDF）无法监听真实出纸，建议改用固定延时判定
-- 快速拖动日志分隔条时可能出现短暂残影，松开后自动恢复；详见 `docs/LOG_DRAG_SYMPTOM_ANALYSIS.md`
+- 日志分隔条拖动已采用整帧同步重绘，避免子窗口新旧像素混杂；真实前台快速拖动的观感仍以本机验证为准，详见 `docs/LOG_DRAG_SYMPTOM_ANALYSIS.md`

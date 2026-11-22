@@ -17,6 +17,9 @@ import tkinter as tk
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Dict, List, Optional, Tuple
 
+import win32con
+import win32gui
+
 from core_utils import (
     CancelledByUser, PdfError, PrintError, PrinterOfflineError, PrintTimeoutError,
     SettingsError, ToolError, format_page_list, is_pdf_path, is_word_path, is_wps_path,
@@ -204,7 +207,31 @@ class LogPanelMixin:
         if not self._log_drag:
             return
         start_y, start_height = self._log_drag
-        self._set_log_height(start_height - (event.y_root - start_y))
+        self._set_log_height_during_drag(start_height - (event.y_root - start_y))
+
+    def _set_log_height_during_drag(self, value: int) -> None:
+        """暂停整窗绘制，布局落定后同步提交完整帧，避免子窗口新旧像素混杂。"""
+        if os.name != "nt":
+            self._set_log_height(value)
+            return
+        try:
+            hwnd = win32gui.GetAncestor(int(self.root.winfo_id()), win32con.GA_ROOT)
+        except Exception:
+            hwnd = 0
+        if not hwnd:
+            self._set_log_height(value)
+            return
+        win32gui.SendMessage(hwnd, win32con.WM_SETREDRAW, 0, 0)
+        try:
+            self._set_log_height(value)
+            # grid 及其 Configure 回调属于 idle 工作；必须在恢复绘制前全部完成。
+            self.root.update_idletasks()
+        finally:
+            win32gui.SendMessage(hwnd, win32con.WM_SETREDRAW, 1, 0)
+            win32gui.RedrawWindow(
+                hwnd, None, None,
+                win32con.RDW_INVALIDATE | win32con.RDW_ERASE |
+                win32con.RDW_ALLCHILDREN | win32con.RDW_UPDATENOW)
 
     def _set_log_height(self, value: int) -> None:
         """把日志高度夹在“最小值 … 窗口 1/3”之间。"""

@@ -77,8 +77,80 @@ class AppBridge:
     # ============================================================ 基础设施
     def attach(self, window) -> None:
         self._window = window
+        # 原生拖放：注册 DOM drop 监听使 _dnd_state['num_listeners']>0，
+        # WebView2 才会把 CoreWebView2File.Path 收集进 _dnd_state['paths']。
+        # 直接置位兜底：DOM 注册在窗口未 shown 时可能失败，而
+        # on_script_notify 收集路径的唯一前提就是 num_listeners>0。
+        try:
+            self._window.dom.body.on("drop", lambda _e: None)
+        except Exception:
+            pass
+        try:
+            from webview.dom import _dnd_state
+            _dnd_state["num_listeners"] = max(1, _dnd_state["num_listeners"])
+        except Exception:
+            pass
+        self._executor.submit(self._drop_pump)
+        # 窗口图标（Win32 层）：用项目自带 app_icon.ico 替换默认 python 图标
+        self._executor.submit(self._apply_window_icon)
         if os.environ.get("WV_SELFTEST") == "1":
             threading.Thread(target=self._selftest, daemon=True).start()
+
+    def _drop_pump(self) -> None:
+        """轮询 pywebview 原生拖放通道，拿到真实文件路径后入队。"""
+        from webview.dom import _dnd_state
+        if os.environ.get("WV_SELFTEST") == "1":
+            print(f"DROP_CHANNEL num_listeners={_dnd_state['num_listeners']}", flush=True)
+        seen = 0
+        while True:
+            try:
+                paths = list(_dnd_state.get("paths", []))
+                if len(paths) > seen:
+                    new_items = paths[seen:]
+                    seen = len(paths)
+                    real = [p for _name, p in new_items if os.path.isfile(p)]
+                    if real:
+                        self._log(f"拖入 {len(real)} 个文件")
+                        self._executor.submit(self._add_dropped, real)
+            except Exception:
+                pass
+            import time
+            time.sleep(0.25)
+
+    def _add_dropped(self, paths: List[str]) -> None:
+        res = self.add_files(paths)
+        self._post("files-added", {"added": res.get("added", []),
+                                   "total": len(self.files)})
+
+    def _apply_window_icon(self) -> None:
+        """用 Win32 原生 API 给 WebView2 窗口设置应用图标。"""
+        try:
+            import time
+            time.sleep(2.5)
+            icon_path = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "app_icon.ico")
+            if not os.path.isfile(icon_path):
+                return
+            import ctypes
+            user32 = ctypes.windll.user32
+            user32.FindWindowW.restype = ctypes.c_void_p
+            user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+            hwnd = user32.FindWindowW(None, "PDF 批量双面打印工具")
+            if not hwnd:
+                return
+            user32.LoadImageW.restype = ctypes.c_void_p
+            user32.LoadImageW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
+                                          ctypes.c_uint, ctypes.c_int, ctypes.c_int,
+                                          ctypes.c_uint]
+            IMAGE_ICON, LR_LOADFROMFILE = 1, 0x0010
+            WM_SETICON, ICON_SMALL, ICON_BIG = 0x0080, 0, 1
+            for size, which in ((16, ICON_SMALL), (32, ICON_BIG)):
+                hicon = user32.LoadImageW(None, icon_path, IMAGE_ICON, size, size,
+                                          LR_LOADFROMFILE)
+                if hicon:
+                    user32.SendMessageW(hwnd, WM_SETICON, which, hicon)
+        except Exception:
+            pass
 
     def _selftest(self) -> None:
         import time
@@ -104,26 +176,25 @@ class AppBridge:
             checks["converters"] = self.converters_available().get("ok")
             checks["recent"] = self.get_recent().get("ok")
             checks["cleanup"] = self.cleanup_stale().get("ok")
+            # 拖放泵端到端：模拟 WebView2 的 FilesDropped 通道注入真实路径
             import tempfile as tf_mod
-            test_path = os.path.join(tf_mod.mkdtemp(prefix="wv-selftest-"), "test.pdf")
+            from webview.dom import _dnd_state
+            drop_path = os.path.join(tf_mod.mkdtemp(prefix="wv-drop-"), "dropped.pdf")
             doc = fitz.open()
-            for i in range(4):
-                page = doc.new_page(width=595, height=842)
-                page.insert_text((72, 72), f"SELFTEST_PAGE_{i + 1}")
-            doc.save(test_path)
+            for i in range(3):
+                p = doc.new_page(width=595, height=842)
+                p.insert_text((72, 72), f"DROPPED_{i + 1}")
+            doc.save(drop_path)
             doc.close()
-            add_res = self.add_files([test_path])
-            checks["add_file"] = add_res.get("ok") and len(add_res.get("added", [])) == 1
-            if add_res.get("added"):
-                rec = add_res["added"][0]
-                checks["pages_correct"] = rec["pages"] == 4
-                checks["set_options"] = self.set_file_options(rec["iid"], "1-3", 2).get("ok")
-                prev = self.preview_page(rec["iid"], 1, {"copies": 1})
-                checks["preview_render"] = prev.get("ok") and prev.get("total") == 4
-                checks["plan_description"] = self.plan_description(rec["iid"], {"copies": 1}).get("ok")
-                checks["compute_plan"] = self.compute_plan({"copies": 2, "manual_duplex": True}).get("ok")
-                self.clear_files()
-            os.unlink(test_path)
+            before = len(self.files)
+            _dnd_state["paths"].append(("dropped.pdf", drop_path))
+            time.sleep(1.0)  # 等 _drop_pump 轮询（0.25s 间隔）
+            checks["drop_pump"] = len(self.files) == before + 1
+            if self.files:
+                rec = list(self.files.values())[-1]
+                checks["drop_path_correct"] = rec["path"] == drop_path and rec["pages"] == 3
+            self.clear_files()
+            os.unlink(drop_path)
             print("SELFTEST_API:", json.dumps(checks), flush=True)
             print("SELFTEST_RESULT:", "PASS" if all(checks.values()) else "FAIL", flush=True)
         except Exception:

@@ -65,6 +65,17 @@ window.__event = function (kind, payload) {
       refreshMetrics();
       break;
     }
+    case "files-added": {
+      // 原生拖放通道入队的文件
+      for (const rec of payload.added) {
+        if (!state.files.some((x) => x.iid === rec.iid)) state.files.push(rec);
+      }
+      renderFiles();
+      refreshMetrics();
+      const last = state.files[state.files.length - 1];
+      if (last && last.pages) selectPreviewFile(last);
+      break;
+    }
     case "status":
       setStatus(payload, "", "running");
       break;
@@ -303,15 +314,18 @@ async function loadPrinters() {
 }
 
 async function updatePrinterStatus(name) {
-  if (!name) return;
-  const res = await api().printer_status(name);
   const dot = $("printer-dot");
+  const label = $("printer-name");
+  if (!name) { dot.className = "dot bad"; label.textContent = "无可用打印机"; return; }
+  dot.className = "dot pending";
+  label.textContent = "检测打印机…";
+  const res = await api().printer_status(name);
   if (res.ok && res.ready) {
     dot.className = "dot ok";
-    $("printer-name").textContent = name;
+    label.textContent = name;
   } else {
     dot.className = "dot bad";
-    $("printer-name").textContent = `${name}（异常）`;
+    label.textContent = `${name}（异常）`;
   }
 }
 
@@ -474,26 +488,42 @@ window.resetAdvanced = function () {
   buildAdvancedForm();
 };
 
-/* ================= 日志抽屉 ================= */
+/* ================= 日志抽屉（mousedown/mousemove/mouseup，document 级监听） ================= */
 function initSash() {
   const sash = $("sash");
   let dragging = false;
-  sash.addEventListener("pointerdown", (e) => {
+
+  // 关键修复：pointer capture 在 WebView2 上偶发失效，改为 document 级
+  // mousemove/mouseup，且 mousedown 即记录状态，不依赖事件冒泡顺序。
+  sash.addEventListener("mousedown", (e) => {
     dragging = true;
-    sash.setPointerCapture(e.pointerId);
     document.body.style.cursor = "sb_v_double_arrow";
+    e.preventDefault();
   });
-  sash.addEventListener("pointermove", (e) => {
+  document.addEventListener("mousemove", (e) => {
     if (!dragging) return;
     const h = window.innerHeight - e.clientY;
     const clamped = Math.max(96, Math.min(h, Math.floor(window.innerHeight / 2)));
     document.documentElement.style.setProperty("--log-h", clamped + "px");
   });
-  sash.addEventListener("pointerup", (e) => {
+  document.addEventListener("mouseup", () => {
+    if (!dragging) return;
     dragging = false;
-    sash.releasePointerCapture(e.pointerId);
     document.body.style.cursor = "";
   });
+  // 触摸设备兜底（pointer 事件仅用于触摸，避免与 mouse 双触发）
+  sash.addEventListener("touchstart", (e) => {
+    dragging = true;
+    e.preventDefault();
+  }, { passive: false });
+  document.addEventListener("touchmove", (e) => {
+    if (!dragging) return;
+    const t = e.touches[0];
+    const h = window.innerHeight - t.clientY;
+    const clamped = Math.max(96, Math.min(h, Math.floor(window.innerHeight / 2)));
+    document.documentElement.style.setProperty("--log-h", clamped + "px");
+  }, { passive: true });
+  document.addEventListener("touchend", () => { dragging = false; });
 }
 
 function exportLog() {
@@ -561,12 +591,28 @@ onBridgeReady(async () => {
   document.querySelectorAll('input[name="duplex"],input[name="flow"]').forEach((r) => r.onchange = refreshMetrics);
   $("preview-page").onchange = (e) => renderPreview(parseInt(e.target.value || "1", 10));
 
-  // 拖放
-  document.addEventListener("dragover", (e) => e.preventDefault());
+  // 拖放：WebView2 的 File.path 为空，必须用 pywebview 原生通道。
+  // JS 只负责发 'FilesDropped' 消息，WebView2 会把 CoreWebView2File（含
+  // 真实 Path）附加给 Python；Python 侧轮询 _dnd_state['paths'] 取路径。
+  const dropZone = $("file-list");
+  const showDropHint = (on) => { dropZone.style.outline = on ? "2px dashed #2563eb" : ""; };
+  document.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  });
+  document.addEventListener("dragenter", (e) => {
+    if (e.dataTransfer.types.includes("Files")) showDropHint(true);
+  });
+  document.addEventListener("dragleave", (e) => {
+    if (e.relatedTarget === null) showDropHint(false);
+  });
   document.addEventListener("drop", (e) => {
     e.preventDefault();
-    const paths = Array.from(e.dataTransfer.files).map((f) => f.path);
-    if (paths.length) doAdd(paths);
+    showDropHint(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length &&
+        window.chrome && chrome.webview) {
+      chrome.webview.postMessage("FilesDropped");
+    }
   });
 
   // 快捷键：Ctrl+P 打印 / Esc 取消 / Ctrl+A 全选 / Del 移除选中

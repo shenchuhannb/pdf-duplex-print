@@ -325,3 +325,96 @@ html, body {
   border: 2px solid var(--surface);
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* ============ 模态框 ============ */
+.modal-mask {
+  position: fixed; inset: 0;
+  background: rgba(24, 34, 48, .32);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: var(--surface);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  width: min(680px, 90vw);
+  max-height: 84vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 20px 60px rgba(24, 34, 48, .25);
+}
+.modal-head {
+  display: flex; align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 15px; font-weight: 700; }
+.modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: var(--gap-card);
+}
+.modal-foot {
+  display: flex; align-items: center; gap: var(--gap);
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-alt);
+  border-radius: 0 0 12px 12px;
+}
+.form-row {
+  display: flex; align-items: center; gap: var(--gap);
+}
+.form-row > span:first-child { min-width: 96px; font-size: 12px; color: var(--muted); }
+.form-row .input { flex: 1; }
+.plan-text {
+  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  font-size: 12px; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-all;
+  background: var(--surface-alt);
+  border-radius: 8px; padding: 12px;
+  max-height: 50vh; overflow: auto;
+}
+
+/* ============ 进度条 ============ */
+.progress-track {
+  width: 180px; height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  visibility: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  width: 0%;
+  transition: width .25s;
+}
+.progress-track.active { visibility: visible; }
+
+/* ============ 高级设置分组 ============ */
+.adv-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.adv-section-title {
+  font-size: 12px; font-weight: 700; margin-bottom: 8px;
+  color: var(--accent-pressed);
+}
+.adv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px 16px;
+}
+.adv-grid .form-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+.adv-grid .form-row > span:first-child { min-width: 0; }
+.adv-grid .form-row .input { width: 100%; }
+.checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.checkbox-row input { accent-color: var(--accent); }
+.adv-hint { font-size: 11px; color: var(--muted); }
+
+.preview-footer {
+  border-top: 1px solid var(--border);
+  padding: 6px 12px;
+  display: flex; justify-content: flex-end;
+}
+

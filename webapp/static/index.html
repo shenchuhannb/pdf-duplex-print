@@ -4,12 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PDF 批量双面打印工具</title>
-<link rel="stylesheet" href="/static/style.css?v=3">
+<link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
 <div id="app">
 
-  <!-- 顶部标题栏 + 统计 -->
   <header class="topbar">
     <div class="brand">
       <div class="brand-icon">文</div>
@@ -18,21 +17,19 @@
         <div class="brand-sub">批量 · 排版 · 手动双面</div>
       </div>
     </div>
-    <div class="metrics" id="metrics">
+    <div class="metrics">
       <div class="metric"><div class="metric-num" id="m-files">0</div><div class="metric-cap">文件</div></div>
       <div class="metric"><div class="metric-num" id="m-pages">0</div><div class="metric-cap">选取页</div></div>
       <div class="metric"><div class="metric-num" id="m-sheets">0</div><div class="metric-cap">预计张数</div></div>
       <div class="metric"><div class="metric-num" id="m-flips">0</div><div class="metric-cap">翻面次数</div></div>
     </div>
-    <div class="printer-chip" id="printer-chip">
+    <div class="printer-chip">
       <span class="dot ok" id="printer-dot"></span>
       <span id="printer-name">检测打印机…</span>
     </div>
   </header>
 
-  <!-- 主区域：左文件列表 / 右预览 -->
   <main class="workspace">
-
     <section class="panel files-panel">
       <div class="panel-head">
         <span class="panel-title">文件列表 <span id="file-count" class="muted">0 个文件</span></span>
@@ -61,6 +58,7 @@
         <div class="recent">
           <span class="muted small">最近：</span>
           <input type="text" id="recent-input" placeholder="路径或文件名" class="input">
+          <button class="btn ghost sm" id="btn-add-recent">添加</button>
         </div>
       </div>
     </section>
@@ -80,43 +78,43 @@
           <div class="empty-sub">在左侧添加 PDF、Word 或图片</div>
         </div>
       </div>
+      <div class="preview-footer">
+        <button class="btn ghost sm" id="btn-plan-detail">页序详情</button>
+      </div>
     </section>
   </main>
 
-  <!-- 底部：打印设置 -->
-  <section class="printbar">
+  <section class="printbar" id="printbar">
     <div class="printbar-row">
-      <label class="field">
-        <span class="cap">打印机</span>
+      <label class="field"><span class="cap">打印机</span>
         <select id="printer-select" class="input select"></select>
         <button class="btn ghost sm" id="btn-refresh-printers">刷新</button>
       </label>
-      <label class="field">
-        <span class="cap">份数</span>
+      <label class="field"><span class="cap">份数</span>
         <input type="number" id="copies" value="1" min="1" max="9999" class="input num">
       </label>
-      <div class="field">
-        <span class="cap">输出</span>
+      <div class="field"><span class="cap">输出</span>
         <label class="radio"><input type="radio" name="duplex" value="simplex" checked>单面</label>
         <label class="radio"><input type="radio" name="duplex" value="manual">手动双面</label>
       </div>
-      <div class="field grow">
-        <span class="cap">翻面流程</span>
-        <label class="radio"><input type="radio" name="flow" value="batch-last" checked>整批，最后取纸</label>
-        <label class="radio"><input type="radio" name="flow" value="batch-each">整批，逐文件取纸</label>
-        <label class="radio"><input type="radio" name="flow" value="each">逐文件执行</label>
+      <div class="field grow"><span class="cap">翻面流程</span>
+        <label class="radio"><input type="radio" name="flow" value="batch_all" checked>整批，最后取纸</label>
+        <label class="radio"><input type="radio" name="flow" value="batch_take">整批，逐文件取纸</label>
+        <label class="radio"><input type="radio" name="flow" value="per_file">逐文件执行</label>
       </div>
+      <button class="btn ghost sm" id="btn-advanced">高级设置…</button>
     </div>
     <div class="printbar-row">
       <div class="status" id="status-text">待开始</div>
       <div class="muted small" id="status-sub">就绪，可以添加文件</div>
+      <div class="progress-track" id="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
       <div class="spacer"></div>
       <button class="btn accent" id="btn-print">开始打印</button>
-      <button class="btn ghost" id="btn-cancel" disabled>暂停</button>
+      <button class="btn ghost" id="btn-pause" disabled>暂停</button>
+      <button class="btn ghost danger" id="btn-cancel" disabled>取消任务</button>
     </div>
   </section>
 
-  <!-- 底部：日志抽屉（可拖高度） -->
   <section class="logpanel" id="logpanel">
     <div class="sash" id="sash"><div class="grip"></div></div>
     <div class="log-head">
@@ -131,6 +129,77 @@
   </section>
 
 </div>
-<script src="/static/app.js?v=3"></script>
+
+<!-- 高级设置模态框 -->
+<div class="modal-mask" id="modal-advanced" style="display:none">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title">高级设置</span>
+      <button class="btn ghost sm" onclick="hideModal('modal-advanced')">✕</button></div>
+    <div class="modal-body" id="advanced-body"></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="resetAdvanced()">恢复默认</button>
+      <div class="spacer"></div>
+      <button class="btn ghost" onclick="hideModal('modal-advanced')">取消</button>
+      <button class="btn soft" onclick="applyAdvanced()">应用设置</button>
+    </div>
+  </div>
+</div>
+
+<!-- 单文件设置模态框 -->
+<div class="modal-mask" id="modal-fileopt" style="display:none">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title" id="fileopt-title">文件设置</span>
+      <button class="btn ghost sm" onclick="hideModal('modal-fileopt')">✕</button></div>
+    <div class="modal-body">
+      <label class="form-row"><span>页码范围</span>
+        <input type="text" id="fileopt-range" class="input" placeholder="如 1-5,8,10-12（空=全部）"></label>
+      <label class="form-row"><span>份数</span>
+        <input type="number" id="fileopt-copies" class="input num" min="1" max="9999" value="1"></label>
+      <div class="muted small">范围语法：1-5,8,10-12；留空打印全部页面。</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="hideModal('modal-fileopt')">取消</button>
+      <button class="btn soft" onclick="applyFileOpt()">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 翻面确认模态框 -->
+<div class="modal-mask" id="modal-flip" style="display:none">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title" id="flip-title">请翻面</span></div>
+    <div class="modal-body" id="flip-body"></div>
+    <div class="modal-foot">
+      <button class="btn ghost danger" onclick="flipAnswer(false)">取消任务</button>
+      <div class="spacer"></div>
+      <button class="btn accent" onclick="flipAnswer(true)">已翻面，继续打印反面</button>
+    </div>
+  </div>
+</div>
+
+<!-- 不确定阶段确认模态框 -->
+<div class="modal-mask" id="modal-phase" style="display:none">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title">打印状态确认</span></div>
+    <div class="modal-body" id="phase-body"></div>
+    <div class="modal-foot">
+      <button class="btn ghost danger" onclick="phaseAnswer(false)">取消</button>
+      <div class="spacer"></div>
+      <button class="btn accent" onclick="phaseAnswer(true)">已完成，继续</button>
+    </div>
+  </div>
+</div>
+
+<!-- 页序详情模态框 -->
+<div class="modal-mask" id="modal-plan" style="display:none">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title">页序详情</span>
+      <button class="btn ghost sm" onclick="hideModal('modal-plan')">✕</button></div>
+    <div class="modal-body"><pre id="plan-text" class="plan-text"></pre></div>
+    <div class="modal-foot"><button class="btn soft" onclick="hideModal('modal-plan')">关闭</button></div>
+  </div>
+</div>
+
+<script src="/static/app.js?v=5"></script>
 </body>
 </html>

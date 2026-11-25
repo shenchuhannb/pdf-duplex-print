@@ -412,7 +412,7 @@ class LayoutOptions:
     orientation: str = "auto"        # auto / portrait / landscape
     source_name: str = "自动选择"
     source_code: int = 7             # DMBIN_AUTO
-    auto_rotate: bool = True
+    auto_rotate: bool = False
     scale_mode: str = "fit"           # fit / shrink / actual / custom / paper
     scale_percent: int = 100
     nup: int = 1
@@ -478,6 +478,9 @@ def paper_size_pt(options: LayoutOptions, first_page_landscape: bool = False) ->
 
     ★ 同一打印任务只能使用一种纸张尺寸，所以“自动”方向以首页为准；
       混合横竖页通过“自动旋转”在槽位内部转 90° 解决。
+
+    ★ 所有分支都必须返回“横版宽 > 高 / 竖版高 > 宽”的归一化结果，调用方
+      （slot_rects、compose_layout_pdf、预览）才能用同一个宽高比推导槽位。
     """
     if options.paper_name in PAPER_SIZES_MM:
         width_mm, height_mm = PAPER_SIZES_MM[options.paper_name]
@@ -491,6 +494,11 @@ def paper_size_pt(options: LayoutOptions, first_page_landscape: bool = False) ->
         width_pt, height_pt = min(width_pt, height_pt), max(width_pt, height_pt)
     elif orientation == "landscape":
         width_pt, height_pt = max(width_pt, height_pt), min(width_pt, height_pt)
+    elif options.booklet:
+        # 小册子（骑马钉）以“对折面”为单位阅读：对折后每面是纵向页面，
+        # 因此“自动”方向必须优先横版纸张，否则会得到两条极窄的竖槽位。
+        if width_pt < height_pt:
+            width_pt, height_pt = height_pt, width_pt
     else:  # auto：跟随首页
         if first_page_landscape and width_pt < height_pt:
             width_pt, height_pt = height_pt, width_pt
@@ -625,6 +633,20 @@ def compute_placement(
     return visible, clip, True
 
 
+def auto_rotate_allowed(
+    options: "LayoutOptions", nup: int, booklet: bool = False
+) -> bool:
+    """是否允许按槽位方向自动旋转源内容。
+
+    只有拼接（N-up > 1）或小册子才需要把内容旋转 90° 适配窄槽位；
+    单页（nup=1）必须保持源内容的阅读方向，横版内容放到竖版纸上时
+    只做等比缩放与居中（四周留白），否则用户看到的内容会侧躺。
+    """
+    if not options.auto_rotate:
+        return False
+    return bool(booklet) or int(nup) > 1
+
+
 def preview_metrics(
     plan: "LayoutPlan",
     options: LayoutOptions,
@@ -633,8 +655,12 @@ def preview_metrics(
 ) -> Dict[str, object]:
     """计算“成纸预览”所需的几何数据（纯函数，便于单元测试）。
 
+    page_w / page_h 必须是**源 PDF 该页的显示尺寸**（点），不能传纸张尺寸：
+    传成纸张会把“缩放百分比”算成槽位占纸张的比例，预览数字就会和真实
+    排版结果对不上（横版 N-up 时差异尤其明显）。
+
     返回：
-      paper      纸张尺寸（点）
+      paper      纸张尺寸（点），与 compose_layout_pdf 生成的页面完全一致
       slots      每个版式槽位的矩形 (x0, y0, x1, y1)，按页序排列
       nup        实际每张页数（小册子固定 2）
       scale_percent  当前缩放模式下页面的实际缩放百分比（如 90.5）
@@ -650,7 +676,8 @@ def preview_metrics(
     slot = slots[0] if slots else fitz.Rect(left, top, paper_w - right, paper_h - bottom)
 
     src = fitz.Rect(0, 0, max(1.0, page_w), max(1.0, page_h))
-    if options.auto_rotate and (src.width > src.height) != (slot.width > slot.height):
+    if auto_rotate_allowed(options, nup, plan.booklet) \
+            and (src.width > src.height) != (slot.width > slot.height):
         src = fitz.Rect(0, 0, src.height, src.width)
     desired = compute_desired_rect(src, slot, options.scale_mode, options.scale_percent)
     percent = 0.0
@@ -686,6 +713,7 @@ def side_scale_percents(
     gap = 0.0 if plan.booklet else 2.0
     slots = slot_rects(plan.paper_pt[0], plan.paper_pt[1], nup, options, gap_mm=gap)
     slot = slots[0]
+    allow_rotate = auto_rotate_allowed(options, nup, plan.booklet)
     result: List[Tuple[float, bool]] = []
     for entries in plan.sides:
         rel = next((r for r in entries
@@ -699,7 +727,7 @@ def side_scale_percents(
             result.append((0.0, False))
             continue
         src = fitz.Rect(0, 0, max(1.0, width), max(1.0, height))
-        if options.auto_rotate and (src.width > src.height) != (slot.width > slot.height):
+        if allow_rotate and (src.width > src.height) != (slot.width > slot.height):
             src = fitz.Rect(0, 0, src.height, src.width)
         desired = compute_desired_rect(src, slot, options.scale_mode, options.scale_percent)
         percent = 100.0 * desired.width / src.width if src.width > 0 else 0.0
@@ -876,6 +904,9 @@ def describe_plan(plan: LayoutPlan) -> str:
         parts.append(f"{plan.output_count} 个输出面")
     if plan.output_blank_added:
         parts.append("另补 1 个空白输出面用于双面配对")
+    if plan.booklet and plan.paper_pt[0] < plan.paper_pt[1]:
+        # 小册子对折后每面应为纵向页面；竖版纸张会把两页压成极窄的条状。
+        parts.append("小册子建议改用横版纸张（当前竖版会把两页压窄）")
     return "，".join(parts)
 
 
@@ -930,16 +961,36 @@ class ComposeResult:
     selected_count: int
     skipped_blank: int
     abs_pages: List[int] = field(default_factory=list)
+    # 每个输出面实测的（缩放百分比, 是否溢出裁切），按输出面顺序。
+    # 由 _place_source 在真实放置时测得，供预览显示“与实际合成完全一致”的比例。
+    side_scales: List[Tuple[float, bool]] = field(default_factory=list)
+
+    @property
+    def paper_pt(self) -> Tuple[float, float]:
+        """排版 PDF 的实际页面尺寸（点），与 plan.paper_pt 相同。"""
+        return self.plan.paper_pt
 
 
-def _standalone_page(src: "fitz.Document", pno: int, crop_rect: Optional["fitz.Rect"],
+def _standalone_page(src: "fitz.Document", pno: int, options: LayoutOptions,
                      rotate: bool, annots: bool = False) -> "fitz.Document":
-    """复制单页；按需把批注/表单扁平化，保证后续 N-up 放置不会丢失。"""
+    """复制单页并规范化，保证后续 N-up 放置不会丢失或裁切内容。
+
+    顺序必须是 insert → remove_rotation → crop → rotate：
+      * `/Rotate != 0` 的源页如果直接交给 `show_pdf_page`，PyMuPDF 按未旋转的
+        媒体坐标绘制，会把显示尺寸（如 842×595）的内容放进同尺寸目标框，导致
+        超出部分被页面裁掉（真实扫描件 TOP/BOTTOM 标记消失）。
+      * `remove_rotation()` 把 `/Rotate` 烘焙进内容，页面 rect 保持显示尺寸；
+        但它会把 CropBox 重置为整页，所以裁切必须在规范化之后、按显示坐标重算。
+    """
     tmp = fitz.open()
     tmp.insert_pdf(src, from_page=pno, to_page=pno, annots=annots, widgets=annots)
     if annots:
         # show_pdf_page 不复制交互批注；打印和保留排版 PDF 需要可见内容时先 bake。
         tmp.bake(annots=True, widgets=True)
+    if tmp[0].rotation % 360:
+        # 烘焙 /Rotate 后页面坐标系与用户看到的显示坐标一致，裁切才有正确含义。
+        tmp[0].remove_rotation()
+    crop_rect = crop_rect_for_page(tmp[0], options)
     if crop_rect is not None:
         tmp[0].set_cropbox(crop_rect)
     if not rotate:
@@ -958,13 +1009,20 @@ def _place_source(
     pno: int,
     slot: "fitz.Rect",
     options: LayoutOptions,
-) -> None:
-    """把源页放入槽位，处理裁切、自动旋转、缩放与超界裁剪。"""
+    allow_rotate: bool = True,
+) -> Optional[Tuple[float, bool]]:
+    """把源页放入槽位，处理裁切、自动旋转、缩放与超界裁剪。
+
+    allow_rotate 由调用方按排版计划给出：只有拼接（N-up>1）或小册子才允许
+    旋转 90° 适配槽位；单页必须保持源内容阅读方向，只缩放居中（留白）。
+    返回该页实测的（缩放百分比, 是否溢出裁切）；完全落在槽位外时返回 None。
+    “百分比”以实际绘制的独立页（已裁切/已旋转）宽度为基准，因此它和
+    compose_layout_pdf 真正写进 PDF 的比例一致，预览可以直接引用。
+    """
     page = src[pno]
-    crop_rect = crop_rect_for_page(page, options)
 
     rotate = False
-    if options.auto_rotate:
+    if allow_rotate and options.auto_rotate:
         display_w = page.rect.width - sum(options.crop_pt()[0::2])
         display_h = page.rect.height - sum(options.crop_pt()[1::2])
         if display_w <= 0 or display_h <= 0:
@@ -972,18 +1030,24 @@ def _place_source(
         if (display_w > display_h) != (slot.width > slot.height):
             rotate = True
 
-    standalone = _standalone_page(src, pno, crop_rect, rotate, annots=options.annots)
+    standalone = _standalone_page(src, pno, options, rotate, annots=options.annots)
     try:
         src_rect = standalone[0].rect
+        desired = compute_desired_rect(
+            src_rect, slot, options.scale_mode, options.scale_percent)
         dest, clip, keep_proportion = compute_placement(
             src_rect, slot, options.scale_mode, options.scale_percent
         )
         if dest is None:
-            return
+            return None
         kwargs = {"keep_proportion": keep_proportion}
         if clip is not None:
             kwargs["clip"] = clip
         out_page.show_pdf_page(dest, standalone, 0, **kwargs)
+        percent = 100.0 * desired.width / src_rect.width if src_rect.width > 0 else 0.0
+        overflow = (desired.width > slot.width + 0.01
+                    or desired.height > slot.height + 0.01)
+        return percent, overflow
     finally:
         standalone.close()
 
@@ -1019,6 +1083,9 @@ def compose_layout_pdf(
         first_landscape = src[pages[0] - 1].rect.width > src[pages[0] - 1].rect.height
         plan = build_layout_plan(len(pages), options, first_landscape)
         paper_w, paper_h = plan.paper_pt
+        side_scales: List[Tuple[float, bool]] = []
+        # 单页不旋转：横版内容放到竖版纸上只等比缩放居中，保持阅读方向。
+        allow_rotate = auto_rotate_allowed(options, plan.nup, plan.booklet)
 
         for side in plan.sides:
             out_page = out.new_page(width=paper_w, height=paper_h)
@@ -1026,6 +1093,7 @@ def compose_layout_pdf(
                 slots = slot_rects(paper_w, paper_h, 2, options, gap_mm=0.0)
             else:
                 slots = slot_rects(paper_w, paper_h, plan.nup, options, gap_mm=2.0)
+            side_scale = (0.0, False)
             for index, rel in enumerate(side):
                 if index >= len(slots):
                     raise PdfError("排版计划与槽位数量不一致，已中止以避免丢页。")
@@ -1035,7 +1103,12 @@ def compose_layout_pdf(
                 if rel is None or rel > len(pages):
                     continue
                 abs_no = pages[rel - 1]
-                _place_source(out_page, src, abs_no - 1, slot, options)
+                placed = _place_source(out_page, src, abs_no - 1, slot, options,
+                                       allow_rotate=allow_rotate)
+                if placed is not None and side_scale[0] <= 0.0:
+                    # 每个输出面以首个真实内容的缩放比例作为该面代表值。
+                    side_scale = placed
+            side_scales.append(side_scale)
 
         out.save(out_path, garbage=3, deflate=True)
         return ComposeResult(
@@ -1044,6 +1117,7 @@ def compose_layout_pdf(
             selected_count=len(pages),
             skipped_blank=skipped,
             abs_pages=pages,
+            side_scales=side_scales,
         )
     except ToolError:
         raise

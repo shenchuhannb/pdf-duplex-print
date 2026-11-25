@@ -80,7 +80,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-"%PY%" -c "import fitz, win32, PIL, tkinterdnd2" >nul 2>&1
+"%PY%" -c "import fitz, win32, PIL, tkinterdnd2, webview, bottle" >nul 2>&1
 if errorlevel 1 (
     echo [INFO] Installing missing project dependencies...
     "%PY%" -m pip --version >nul 2>&1
@@ -101,7 +101,7 @@ if errorlevel 1 (
 )
 
 if not exist "%PYW%" set "PYW=%PY%"
-start "" "%PYW%" "%ROOT%pdf_duplex_print.py"
+start "" "%PYW%" "%ROOT%webapp\main.py"
 endlocal
 exit /b 0
 

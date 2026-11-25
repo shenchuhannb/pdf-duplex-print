@@ -60,7 +60,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "paper_height_mm": 297.0,
     "source_name": "自动选择",
     "orientation": "auto",        # auto/portrait/landscape
-    "auto_rotate": True,
+    # 默认保持源内容阅读方向；仅用户显式开启时才旋转适配 N-up/小册子槽位。
+    "auto_rotate": False,
+    # 一次性迁移标记：旧配置没有该版本时，废弃历史上的 auto_rotate=True 默认值。
+    "auto_rotate_choice_version": 1,
     # 边距与裁切（毫米）
     # 默认 0：与 Acrobat“直接打印”一致——只在驱动返回的可打印区域内按需收缩，
     # 不额外加白边。需要装订留白时在“高级设置”里自行加大。
@@ -195,6 +198,7 @@ def acrobat_defaults() -> Dict[str, Any]:
         "paper_name": "A4",
         "source_name": "自动选择",
         "orientation": "auto",
+        # 保留 Acrobat“自动旋转并居中”的等效语义；应用自身默认仍为 False。
         "auto_rotate": True,
         "reverse": False,
         "skip_blank": False,
@@ -271,6 +275,16 @@ def _sanitize(data: Dict[str, Any]) -> Dict[str, Any]:
                 result[key] = [str(item) for item in value][:10]
     # 非法 print_flow 字符串在通用循环里会被原样保留，这里再校正一次枚举。
     result["print_flow"] = migrate_print_flow(data)
+    # v1 之前的配置把 auto_rotate=True 当作默认值。只迁移这一次；版本号写入后，
+    # 用户显式开启或关闭都按保存值恢复，不能在每次加载时重复覆盖。
+    try:
+        auto_rotate_choice_version = float(data.get("auto_rotate_choice_version", 0))
+    except (TypeError, ValueError, OverflowError):
+        auto_rotate_choice_version = 0
+    if (not math.isfinite(auto_rotate_choice_version)
+            or auto_rotate_choice_version < 1):
+        result["auto_rotate"] = False
+        result["auto_rotate_choice_version"] = 1
     return result
 
 

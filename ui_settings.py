@@ -519,7 +519,7 @@ class SettingsPanelMixin:
             ttk.Radiobutton(direction_row, text=label, value=value,
                             variable=self.vars["orientation"],
                             command=self._on_setting_change).pack(side="left", padx=(0, 10))
-        ttk.Checkbutton(paper_box, text="自动旋转（横竖页自动转 90° 适配槽位）",
+        ttk.Checkbutton(paper_box, text="方向不符时旋转 90° 适配槽位（默认关闭）",
                         variable=self.vars["auto_rotate"],
                         command=self._on_setting_change).grid(
             row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))

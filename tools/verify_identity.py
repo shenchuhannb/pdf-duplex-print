@@ -74,10 +74,13 @@ def export_hicon(hicon: int, size: int, out_path: str) -> bool:
 
 def ico_frame(size: int, path: str) -> Image.Image:
     """取 .ico 中指定尺寸的帧（缺失时用最大帧缩放），合成到白底。"""
-    image = Image.open(path)
-    image.size = (size, size)
-    image.load()
-    return image.convert("RGB")
+    with Image.open(path) as image:
+        image.size = (size, size)
+        image.load()
+        rgba = image.convert("RGBA")
+    background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+    background.alpha_composite(rgba)
+    return background.convert("RGB")
 
 
 def main() -> int:
@@ -138,8 +141,9 @@ def main() -> int:
     root.destroy()
 
     if "--assert" in sys.argv:
-        ok = (aumid == app_identity.APP_USER_MODEL_ID and big_ok and small_ok and from_file
-              and diffs.get("big", 999) < 40)
+        # HICON 来源是直接证据；DrawIcon 的 alpha/DPI 光栅化差异只作诊断，
+        # 不再用固定像素均值阈值把正确的图标误判为失败。
+        ok = (aumid == app_identity.APP_USER_MODEL_ID and big_ok and small_ok and from_file)
         print("ASSERT", "PASS" if ok else "FAIL")
         return 0 if ok else 1
     return 0

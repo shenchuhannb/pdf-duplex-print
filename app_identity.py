@@ -91,11 +91,37 @@ def load_icon(ico_path: str, size: int):
                               int(size), int(size), LR_LOADFROMFILE)
 
 
+def apply_native_window_icon(hwnd: int, ico_path: str) -> dict:
+    """给任意 Win32 顶层窗口设置标题栏、任务栏与 Alt+Tab 图标。
+
+    Tk 与 pywebview 共用此入口，避免 WebView2 只设置 ICON_BIG 后，
+    任务栏/窗口类仍回退到 pythonw.exe 图标。HICON 由本模块持有到进程退出。
+    """
+    handles = {}
+    if not hwnd or not ico_path or not os.path.isfile(ico_path):
+        return handles
+    for name, size in (("small", 16), ("big", 32)):
+        hicon = load_icon(ico_path, size)
+        if not hicon:
+            continue
+        handles[name] = hicon
+        _ICON_HANDLES.append(hicon)
+        _user32.SendMessageW(hwnd, WM_SETICON,
+                             ICON_SMALL if size <= 16 else ICON_BIG, hicon)
+        if size <= 16:
+            _user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL2, hicon)
+    try:
+        _user32.SetClassLongPtrW(hwnd, GCLP_HICON, handles.get("big") or 0)
+        _user32.SetClassLongPtrW(hwnd, GCLP_HICONS, handles.get("small") or 0)
+    except Exception as exc:
+        _logger.warning("设置窗口类图标失败：%s", exc)
+    return handles
+
+
 def apply_window_icon(window, ico_path: str) -> dict:
     """给 Tk 窗口设置大小两种图标，返回各路径的实际 HICON 句柄。"""
-    handles = {}
     if not ico_path or not os.path.isfile(ico_path):
-        return handles
+        return {}
     try:
         window.iconbitmap(ico_path)      # 标题栏默认图标（Tk 路径）
     except Exception as exc:
@@ -105,24 +131,7 @@ def apply_window_icon(window, ico_path: str) -> dict:
     except Exception as exc:
         _logger.warning("获取顶层窗口句柄失败：%s", exc)
         hwnd = 0
-    for name, size in (("small", 16), ("big", 32)):
-        hicon = load_icon(ico_path, size)
-        if not hicon:
-            continue
-        handles[name] = hicon
-        _ICON_HANDLES.append(hicon)      # 保持引用，防止句柄被回收
-        if hwnd:
-            _user32.SendMessageW(hwnd, WM_SETICON,
-                                 ICON_SMALL if size <= 16 else ICON_BIG, hicon)
-            if size <= 16:
-                _user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL2, hicon)
-    if hwnd:
-        try:
-            _user32.SetClassLongPtrW(hwnd, GCLP_HICON, handles.get("big") or 0)
-            _user32.SetClassLongPtrW(hwnd, GCLP_HICONS, handles.get("small") or 0)
-        except Exception as exc:
-            _logger.warning("设置窗口类图标失败：%s", exc)
-    return handles
+    return apply_native_window_icon(hwnd, ico_path)
 
 
 def _release_icons() -> None:

@@ -8,6 +8,17 @@ __pycache__/
 # 测试/运行缓存
 .pytest_cache/
 .screenshots/
+.coverage
+
+# 本轮验收/自检临时产物（脚本、截图、日志不纳入提交）
+.resultverify/
+artifacts/
+.verify_*.log
+.final*_selftest*.log
+*.log
+
+# 运行时生成的用户配置
+settings.json
 
 # 打包产物
 build/

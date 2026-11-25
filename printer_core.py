@@ -119,6 +119,42 @@ _STATUS_BITS: Tuple[Tuple[str, str], ...] = (
     ("PRINTER_STATUS_POWER_SAVE", "省电模式"),
 )
 
+# 阻止“任务消失即视为完成”的打印机状态：设备本身报错时，队列里看不到任务
+# 不能证明已经正常出纸（可能已被驱动丢弃）。按状态位取中文标签，用于日志与报错。
+_BLOCKING_PRINTER_STATUS: Tuple[Tuple[str, str], ...] = (
+    ("PRINTER_STATUS_OFFLINE", "脱机"),
+    ("PRINTER_STATUS_ERROR", "错误"),
+    ("PRINTER_STATUS_PAPER_OUT", "缺纸"),
+    ("PRINTER_STATUS_PAPER_JAM", "卡纸"),
+    ("PRINTER_STATUS_PAPER_PROBLEM", "纸张问题"),
+    ("PRINTER_STATUS_NO_TONER", "缺墨粉"),
+    ("PRINTER_STATUS_DOOR_OPEN", "门未关"),
+    ("PRINTER_STATUS_USER_INTERVENTION", "需要人工处理"),
+    ("PRINTER_STATUS_OUTPUT_BIN_FULL", "出纸仓已满"),
+)
+
+# 任务“已确认离开队列”后的阻断状态：只保留设备真正故障的位。
+#   * 不含 PAPER_OUT / PAPER_PROBLEM / NO_TONER：HP P1007 等 host-based 驱动
+#     会把这些位当成全局粘滞状态（例如任务已正常出纸，status 仍为
+#     8208 = WAITING|PAPER_OUT），此时任务已被 spooler 判定完成并移出队列，
+#     再据此报错会让每个正/反面阶段都弹“打印状态确认”；
+#   * OFFLINE 仍保留：属性位/状态位均可能表示设备不可达，出队不代表出纸。
+_BLOCKING_AFTER_DISAPPEARANCE: Tuple[Tuple[str, str], ...] = (
+    ("PRINTER_STATUS_OFFLINE", "脱机"),
+    ("PRINTER_STATUS_ERROR", "错误"),
+    ("PRINTER_STATUS_PAPER_JAM", "卡纸"),
+    ("PRINTER_STATUS_DOOR_OPEN", "门未关"),
+    ("PRINTER_STATUS_USER_INTERVENTION", "需要人工处理"),
+    ("PRINTER_STATUS_OUTPUT_BIN_FULL", "出纸仓已满"),
+)
+
+# 任务已出队时可能残留的粘滞状态位：不阻断完成判定，只在日志里说明
+# “驱动未回传页数”的原因（缺纸/等待中）。位不存在时按 0 处理。
+_STICKY_STATUS_AFTER_DISAPPEARANCE: Tuple[Tuple[str, str], ...] = (
+    ("PRINTER_STATUS_PAPER_OUT", "缺纸"),
+    ("PRINTER_STATUS_WAITING", "等待中"),
+)
+
 
 # ----------------------------------------------------------------------------
 # Win32 结构与 API 绑定
@@ -273,6 +309,101 @@ def _job_status_flags(job: dict) -> int:
         if (" " in key and key in text) or (" " not in key and key in words):
             flags |= value
     return flags
+
+
+def enum_job_ids(printer_name: str) -> Optional[List[int]]:
+    """容错枚举打印机队列中的任务 ID。
+
+    HP P1007 等 host-based 驱动在任务刚打印完成时，GetJob 可能抛
+    “无效句柄（winerror 87）”，但队列快照仍可正常枚举。调用方据此区分
+    “任务已完成并从队列消失”与“队列真的读不到”。
+
+    任何异常（OpenPrinter/EnumJobs 不可用、权限不足等）都返回 None，
+    表示“无法判断”，调用方绝不能据此放行。
+    """
+    if win32print is None:
+        return None
+    handle = None
+    try:
+        handle = win32print.OpenPrinter(printer_name)
+        jobs = win32print.EnumJobs(handle, 0, -1, 1) or []
+        ids: List[int] = []
+        for job in jobs:
+            try:
+                ids.append(int(job.get("JobId") or job.get("JobID") or 0))
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return ids
+    except Exception as exc:
+        _logger.warning("枚举打印队列失败：printer=%s error=%s", printer_name, exc)
+        return None
+    finally:
+        if handle is not None:
+            try:
+                win32print.ClosePrinter(handle)
+            except Exception:
+                pass
+
+
+def _read_printer_state(handle) -> Optional[Tuple[int, int]]:
+    """读取打印机（状态位, 属性位）；读取失败返回 None（按“无法判断”处理）。"""
+    try:
+        info = win32print.GetPrinter(handle, 2) or {}
+        return int(info.get("Status") or 0), int(info.get("Attributes") or 0)
+    except Exception as exc:
+        _logger.warning("读取打印机状态失败：%s", exc)
+        return None
+
+
+def _blocking_label_from(
+    table: Tuple[Tuple[str, str], ...], status: int, attributes: int,
+) -> str:
+    """按给定状态表返回首个命中项的中文标签；设备正常时返回空串。
+
+    脱机判定与 get_printer_status/check_printer_ready 保持一致：属性位与
+    状态位取并集（host-based USB 驱动关机时只置 WORK_OFFLINE 属性位）。
+    常量缺失（不同 pywin32 版本）时按 0 处理，不会误判。
+    """
+    if attributes & getattr(win32print, "PRINTER_ATTRIBUTE_WORK_OFFLINE", 0x80):
+        return "脱机"
+    for flag_name, label in table:
+        value = getattr(win32print, flag_name, 0)
+        if value and int(status) & value:
+            return label
+    return ""
+
+
+def _printer_blocking_state(status: int, attributes: int) -> str:
+    """返回阻止“按完成处理”的打印机状态中文标签；设备正常时返回空串。
+
+    该表较严格（含缺纸/纸张问题/缺墨粉），仅适用于“任务状态本身仍未确认”
+    的场景；任务已确认离开队列时请改用
+    _printer_blocking_state_after_disappearance。
+    """
+    return _blocking_label_from(_BLOCKING_PRINTER_STATUS, status, attributes)
+
+
+def _printer_blocking_state_after_disappearance(status: int, attributes: int) -> str:
+    """任务已确认离开队列后，仍应报错的打印机状态标签；否则返回空串。
+
+    只认真正故障（脱机/错误/卡纸/门未关/需人工/出纸仓满）。缺纸、纸张
+    问题、缺墨粉在 host-based 驱动上常是粘滞位，任务出队即视为完成，
+    逐条原因交给 _sticky_printer_status_labels 记录到日志。
+    """
+    return _blocking_label_from(_BLOCKING_AFTER_DISAPPEARANCE, status, attributes)
+
+
+def _sticky_printer_status_labels(status: int) -> List[str]:
+    """返回任务已出队时残留的粘滞状态标签（如 ["缺纸", "等待中"]）。
+
+    仅用于日志说明“驱动未回传页数”的原因，不参与完成/失败判定。
+    """
+    labels: List[str] = []
+    for flag_name, label in _STICKY_STATUS_AFTER_DISAPPEARANCE:
+        value = getattr(win32print, flag_name, 0)
+        if value and int(status) & value and label not in labels:
+            labels.append(label)
+    return labels
 
 
 def _fit_rect(src_w: int, src_h: int, dst_w: int, dst_h: int) -> Tuple[int, int, int, int]:
@@ -688,7 +819,16 @@ def wait_for_print_job(
 
     完成判定（任一满足）：PRINTED / COMPLETE / PagesPrinted >= TotalPages。
     脱机、缺纸、任务错误时抛出异常；用户中止返回 False。
-    队列消失、持续读取异常或超时只进入 UNKNOWN/超时，不得自动判定出纸成功。
+
+    曾经观察到任务后，GetJob 连续读取失败（HP P1007 在任务完成后可能报
+    winerror 87 “无效句柄”）时，先用 EnumJobs 确认任务是否仍在队列中：
+      * 队列里已无此任务，且打印机未处于脱机/错误/卡纸/门未关等真正故障
+        → 按“已提交完成”返回 True，并记录“任务 #N 已从队列消失，按完成处理”；
+        缺纸/等待中等 host-based 驱动粘滞位不阻断完成判定，只在日志里说明
+        “驱动未回传页数”的原因（HP P1007 实测 status=8208 = WAITING|PAPER_OUT）；
+      * 任务仍在队列中、EnumJobs 不可用或打印机报错（真故障）
+        → 仍按 PrintJobUnknownError 交给用户裁决，绝不擅自判定成功。
+    超时同样只进入超时，不得自动判定出纸成功。
     """
     if win32print is None:
         raise PrintError("缺少 pywin32 库，请执行：pip install pywin32")
@@ -754,9 +894,43 @@ def wait_for_print_job(
                 job = win32print.GetJob(handle, job_id, 2)
             except Exception as exc:
                 # 任务消失可能是完成，也可能是删除、RPC 或权限故障；
-                # 无法区分时必须进入 UNKNOWN，不能把不确定状态当成出纸成功。
+                # 必须先确认“任务是否真的已离开队列”，不能凭 GetJob 失败判定。
                 get_job_failures += 1
                 if get_job_failures >= 3:
+                    job_ids = enum_job_ids(printer_name) if job_observed else None
+                    if job_ids is not None and int(job_id) not in job_ids:
+                        # 任务已确认离开队列：用“真故障”表判定，缺纸等粘滞位不再阻断。
+                        state = _read_printer_state(handle)
+                        blocking = (
+                            _printer_blocking_state_after_disappearance(*state)
+                            if state else "")
+                        if state is not None and not blocking:
+                            sticky = _sticky_printer_status_labels(state[0])
+                            if log:
+                                if sticky:
+                                    log(
+                                        f"任务 #{job_id} 已从队列消失，按完成处理"
+                                        f"（打印机状态：{'/'.join(sticky)}，"
+                                        "驱动未回传页数）。")
+                                else:
+                                    log(f"任务 #{job_id} 已从队列消失，按完成处理。")
+                            _logger.info(
+                                "打印任务已从队列消失，按完成处理："
+                                "printer=%s job_id=%s status=%s sticky=%s",
+                                printer_name, job_id, state[0], "/".join(sticky) or "-")
+                            return True
+                        if blocking == "脱机":
+                            raise PrinterOfflineError(
+                                f"打印机「{printer_name}」已脱机，"
+                                f"无法确认打印任务 #{job_id} 是否完成。\n"
+                                "请检查电源与连接后重新打印。"
+                            ) from exc
+                        if blocking:
+                            raise PrintError(
+                                f"打印机「{printer_name}」当前{blocking}，"
+                                f"无法确认打印任务 #{job_id} 是否完成，"
+                                "请检查设备后重试。"
+                            ) from exc
                     if job_observed or poll_delayed:
                         raise PrintJobUnknownError(
                             f"无法确认打印任务 #{job_id} 的状态：连续读取队列失败。"

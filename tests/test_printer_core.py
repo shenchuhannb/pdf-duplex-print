@@ -334,3 +334,105 @@ class TestWaitNeverObserved:
         self._fake_queue(monkeypatch, open_fail_times=1)
         with pytest.raises(printer_core.PrintJobUnknownError):
             printer_core.wait_for_print_job("P1007", 42, threading.Event())
+
+
+class TestWaitJobDisappearedAfterObservation:
+    """任务已观察到后 GetJob 连续失败：用 EnumJobs 判定任务是否已离开队列。
+
+    HP P1007 实测：任务打印完成后 GetJob 可能持续报 winerror 87（无效句柄），
+    但任务已从队列消失。旧实现一律抛 PrintJobUnknownError，导致每个正/反面
+    阶段都弹“打印状态确认”。
+    """
+
+    def _install_fake(self, monkeypatch, enum_jobs, enum_jobs_broken=False):
+        """安装假队列：GetJob 先成功返回一次任务，之后连续报无效句柄。"""
+        state = {"reads": 0, "status": 0, "attributes": 0}
+        fake = types.SimpleNamespace(**{
+            name: getattr(win32print, name)
+            for name in dir(win32print) if name.isupper()
+        })
+
+        def get_job(handle, job_id, level):
+            state["reads"] += 1
+            if state["reads"] == 1:
+                return {"JobId": job_id,
+                        "Status": win32print.JOB_STATUS_PRINTING,
+                        "PagesPrinted": 0, "TotalPages": 4}
+            raise OSError(0, "The handle is invalid.", None, 87)
+
+        def list_jobs(handle, first_job, count, level):
+            if enum_jobs_broken:
+                raise OSError(0, "The handle is invalid.", None, 87)
+            return [{"JobId": job} for job in enum_jobs]
+
+        fake.OpenPrinter = lambda name: object()
+        fake.ClosePrinter = lambda handle: None
+        fake.GetPrinter = lambda handle, level: {
+            "Status": state["status"], "Attributes": state["attributes"],
+            "cJobs": len(enum_jobs)}
+        fake.GetJob = get_job
+        fake.EnumJobs = list_jobs
+        fake.SetJob = lambda *args: None
+        monkeypatch.setattr(printer_core, "win32print", fake)
+        monkeypatch.setattr(printer_core, "JOB_POLL_INTERVAL", 0.01)
+        monkeypatch.setattr(printer_core, "RETRY_BACKOFF_SECONDS", 0.01)
+        monkeypatch.setattr(printer_core, "PRINTER_STATUS_POLL_INTERVAL", 0.01)
+        return state
+
+    def test_job_gone_is_treated_as_complete_and_logged(self, monkeypatch):
+        self._install_fake(monkeypatch, enum_jobs=[])
+        logs = []
+        assert printer_core.wait_for_print_job(
+            "HP LaserJet P1007", 42, threading.Event(), log=logs.append) is True
+        assert any("任务 #42 已从队列消失" in line for line in logs)
+        assert any("按完成处理" in line for line in logs)
+
+    def test_job_still_in_queue_keeps_unknown(self, monkeypatch):
+        self._install_fake(monkeypatch, enum_jobs=[42])
+        with pytest.raises(printer_core.PrintJobUnknownError):
+            printer_core.wait_for_print_job(
+                "HP LaserJet P1007", 42, threading.Event())
+
+    def test_enum_jobs_unavailable_keeps_unknown(self, monkeypatch):
+        self._install_fake(monkeypatch, enum_jobs=[], enum_jobs_broken=True)
+        with pytest.raises(printer_core.PrintJobUnknownError):
+            printer_core.wait_for_print_job(
+                "HP LaserJet P1007", 42, threading.Event())
+
+    def test_paper_out_waiting_status_does_not_block_completion(self, monkeypatch):
+        """HP P1007 实测：任务出队后 status 仍为 8208（WAITING|PAPER_OUT）。
+
+        这两个位是驱动粘滞状态，不能作为失败依据；应返回 True，且日志只出现
+        一次“按完成处理”，并说明缺纸/等待中导致驱动未回传页数。
+        """
+        state = self._install_fake(monkeypatch, enum_jobs=[])
+        state["status"] = 8208   # PRINTER_STATUS_WAITING | PRINTER_STATUS_PAPER_OUT
+        state["attributes"] = 0
+        logs = []
+        assert printer_core.wait_for_print_job(
+            "HP LaserJet P1007", 42, threading.Event(), log=logs.append) is True
+        text = "\n".join(logs)
+        assert "已从队列消失" in text
+        assert "缺纸" in text or "等待中" in text
+        assert text.count("按完成处理") == 1
+
+    def test_printer_error_after_disappearance_still_raises(self, monkeypatch):
+        """真故障位（ERROR）即便任务已出队也必须报错，不能返回 True。"""
+        state = self._install_fake(monkeypatch, enum_jobs=[])
+        state["status"] = win32print.PRINTER_STATUS_ERROR
+        state["attributes"] = 0
+        logs = []
+        with pytest.raises(PrintError, match="错误"):
+            printer_core.wait_for_print_job(
+                "HP LaserJet P1007", 42, threading.Event(), log=logs.append)
+        assert not any("按完成处理" in line for line in logs)
+
+    def test_offline_printer_still_raises(self, monkeypatch):
+        state = self._install_fake(monkeypatch, enum_jobs=[])
+        # 关闭循环内的周期状态检查，强制走到“任务消失”分支再做状态判断。
+        monkeypatch.setattr(printer_core, "PRINTER_STATUS_POLL_INTERVAL", 1e9)
+        state["status"] = win32print.PRINTER_STATUS_OFFLINE
+        from core_utils import PrinterOfflineError
+        with pytest.raises(PrinterOfflineError):
+            printer_core.wait_for_print_job(
+                "HP LaserJet P1007", 42, threading.Event())

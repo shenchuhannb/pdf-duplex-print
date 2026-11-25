@@ -6,6 +6,8 @@
 - `verify_identity.py` — 校验任务栏图标/AUMID/快捷方式是否生效
 - `make_icons.py` — 重新生成 app_icon.ico（多尺寸）
 - `capture_ui.py` — UI 截图工具（供文档与回归对比）
+- `verify_real_drag.py` — 从真实资源管理器鼠标拖放 PDF 到应用
+- `verify_window_geometry.py` — 隔离 APPDATA 下验证窗口移动/缩放/关闭/重启后的坐标恢复（含最大化/最小化还原态，不执行真实打印）
 
 文档资源在 `docs/`：word_compare 为 Word 转换质量对比实验（含脚本与数据），
 screenshots 为历次 UI 改动的过程截图存档。

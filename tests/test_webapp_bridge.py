@@ -254,14 +254,23 @@ def test_restore_ime_sends_once_only_for_own_foreground_window(bridge, monkeypat
     monkeypatch.delenv("WV_SELFTEST", raising=False)
     monkeypatch.setattr("webapp.bridge.time.sleep", lambda _seconds: None)
     sent = []
+    logs = []
     monkeypatch.setattr("webapp.bridge._send_single_shift", lambda: sent.append(1))
     monkeypatch.setattr("webapp.bridge._is_own_window_visible", lambda _w: False)
+    monkeypatch.setattr("webapp.bridge._is_own_window_foreground", lambda _w: True)
+    bridge._log = logs.append
     bridge._window = _shown_window()
 
     bridge._restore_ime()
     assert sent == []  # 窗口不可见时绝不往别的程序发按键
 
     monkeypatch.setattr("webapp.bridge._is_own_window_visible", lambda _w: True)
+    monkeypatch.setattr("webapp.bridge._is_own_window_foreground", lambda _w: False)
+    bridge._restore_ime()
+    assert sent == []  # 窗口可见但不是前台时也不发按键
+    assert "窗口不在前台" in logs[-1]
+
+    monkeypatch.setattr("webapp.bridge._is_own_window_foreground", lambda _w: True)
     bridge._restore_ime()
     assert sent == [1]  # 本次启动只发一次，不回读状态再重试
 

@@ -228,7 +228,73 @@ def test_word_failed_conversion_restores_previous_pdf(tmp_path, monkeypatch):
     with pytest.raises(word_convert.WordConvertError):
         word_convert.convert_file(str(src), str(dst))
     assert dst.read_bytes() == b"previous-pdf"
-    assert not list(tmp_path.glob(".office_backup_*"))
+    assert not list(tmp_path.glob(".office_staging_*"))
+
+
+@pytest.mark.parametrize("output_kind", ["malformed", "empty"])
+def test_word_invalid_pdf_preserves_previous_output(tmp_path, monkeypatch, output_kind):
+    src = tmp_path / "source.docx"
+    src.write_bytes(b"docx")
+    dst = tmp_path / "output.pdf"
+    dst.write_bytes(b"previous-pdf")
+
+    class InvalidPdfProcess:
+        returncode = 0
+
+        def __init__(self, command, **_kwargs):
+            output_path = command[command.index("--dst") + 1]
+            if output_kind == "malformed":
+                Path(output_path).write_bytes(b"not a PDF")
+            else:
+                fitz.open().save(output_path)
+
+        def communicate(self, timeout=None):
+            return b"", b""
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(word_convert.subprocess, "Popen", InvalidPdfProcess)
+    monkeypatch.setattr(word_convert, "_terminate_owned_office", lambda _path: None)
+    with pytest.raises(word_convert.WordConvertError):
+        word_convert.convert_file(str(src), str(dst))
+
+    assert dst.read_bytes() == b"previous-pdf"
+    assert not list(tmp_path.glob(".office_staging_*"))
+
+
+def test_word_valid_conversion_replaces_previous_output(tmp_path, monkeypatch):
+    src = tmp_path / "source.docx"
+    src.write_bytes(b"docx")
+    dst = tmp_path / "output.pdf"
+    dst.write_bytes(b"previous-pdf")
+
+    class SuccessfulProcess:
+        returncode = 0
+
+        def __init__(self, command, **_kwargs):
+            output_path = command[command.index("--dst") + 1]
+            doc = fitz.open()
+            doc.new_page()
+            doc.save(output_path)
+            doc.close()
+
+        def communicate(self, timeout=None):
+            return b"converter=Word\n", b""
+
+        def poll(self):
+            return self.returncode
+
+    monkeypatch.setattr(word_convert.subprocess, "Popen", SuccessfulProcess)
+    info = word_convert.convert_file(str(src), str(dst))
+
+    assert info["pages"] == 1
+    with fitz.open(dst) as doc:
+        assert doc.page_count == 1
+    assert not list(tmp_path.glob(".office_staging_*"))
 
 
 def test_image_rejects_same_path_and_preserves_existing_output(tmp_path):

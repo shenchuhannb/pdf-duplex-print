@@ -105,12 +105,7 @@ IME_RESTORE_DELAY_SECONDS = 0.4
 
 
 def _is_own_window_visible(window) -> bool:
-    """本应用窗口是否可见且未最小化。
-
-    不能用 GetForegroundWindow 判断：本机壁纸程序的 BkShadowWndClass
-    会长期占据前景，应用窗口明明可见也会被误判成“不在前台”。启动场景下
-    “窗口可见且未最小化”已经足够表达“用户刚打开本应用”。
-    """
+    """本应用窗口是否可见且未最小化。"""
     try:
         import ctypes
         from ctypes import wintypes
@@ -121,6 +116,19 @@ def _is_own_window_visible(window) -> bool:
         user32.IsIconic.restype = wintypes.BOOL
         hwnd = int(window.native.Handle.ToInt64())
         return bool(user32.IsWindowVisible(hwnd)) and not bool(user32.IsIconic(hwnd))
+    except Exception:
+        return False
+
+
+def _is_own_window_foreground(window) -> bool:
+    """本应用窗口是否为当前前台窗口。"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        hwnd = int(window.native.Handle.ToInt64())
+        return int(user32.GetForegroundWindow()) == hwnd
     except Exception:
         return False
 
@@ -324,6 +332,9 @@ class AppBridge:
             time.sleep(IME_RESTORE_DELAY_SECONDS)
             if not _is_own_window_visible(window):
                 self._log("启动恢复输入法：窗口不可见，跳过")
+                return
+            if not _is_own_window_foreground(window):
+                self._log("启动恢复输入法：窗口不在前台，跳过")
                 return
             _send_single_shift()
             self._log("启动恢复输入法：已发送 Shift")

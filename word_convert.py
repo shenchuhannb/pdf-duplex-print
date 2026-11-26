@@ -1133,18 +1133,18 @@ def convert_file(src: str, dst: str, timeout: float = 180.0,
         raise WordConvertError("源文件与输出 PDF 不能是同一路径。")
     folder = os.path.dirname(dst) or "."
     os.makedirs(folder, exist_ok=True)
-    backup_path = ""
-    if os.path.isfile(dst):
-        fd, backup_path = tempfile.mkstemp(prefix=".office_backup_", suffix=".pdf", dir=folder)
-        os.close(fd)
-        os.replace(dst, backup_path)
-    fd, pid_file = tempfile.mkstemp(prefix=".office_owners_", suffix=".txt", dir=folder)
-    os.close(fd)
-    command = _worker_command(python_exe, "--src", src, "--dst", dst)
+    staging_dir = tempfile.mkdtemp(prefix=".office_staging_", dir=folder)
+    staging_dst = os.path.join(staging_dir, os.path.basename(dst))
+    pid_file = ""
     process = None
     out = err = b""
     completed = False
+    pages = 0
+    gaps: List[str] = []
     try:
+        fd, pid_file = tempfile.mkstemp(prefix=".office_owners_", suffix=".txt", dir=folder)
+        os.close(fd)
+        command = _worker_command(python_exe, "--src", src, "--dst", staging_dst)
         process = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             creationflags=CREATE_NO_WINDOW, env=_worker_environment(pid_file))
@@ -1161,8 +1161,11 @@ def convert_file(src: str, dst: str, timeout: float = 180.0,
         if process.returncode != 0:
             detail = _last_line(err) or _last_line(out) or f"退出码 {process.returncode}"
             raise WordConvertError(f"Word 转换失败：{detail}")
-        if not os.path.isfile(dst) or os.path.getsize(dst) == 0:
-            raise WordConvertError("Word 转换失败：未生成 PDF 文件。")
+        try:
+            pages, gaps = _probe_output(staging_dst)
+        except Exception as exc:
+            raise WordConvertError(f"转换结果不是有效 PDF：{exc}") from exc
+        os.replace(staging_dst, dst)
         completed = True
     except WordConvertError:
         raise
@@ -1176,16 +1179,10 @@ def convert_file(src: str, dst: str, timeout: float = 180.0,
                     process.communicate(timeout=15)
                 except Exception:
                     pass
-            _terminate_owned_office(pid_file)
-            _remove_quietly(dst)
-            if backup_path:
-                try:
-                    os.replace(backup_path, dst)
-                except OSError:
-                    pass
-        else:
-            _remove_quietly(pid_file)
-            _remove_quietly(backup_path)
+            if pid_file:
+                _terminate_owned_office(pid_file)
+        _remove_quietly(pid_file)
+        shutil.rmtree(staging_dir, ignore_errors=True)
 
     converter = ""
     bitmap_missing_fonts = None
@@ -1202,20 +1199,6 @@ def convert_file(src: str, dst: str, timeout: float = 180.0,
                 parsed = {}
             if isinstance(parsed, dict):
                 font_summary = parsed
-    pages = 0
-    gaps: List[str] = []
-    try:
-        import fitz
-
-        with fitz.open(dst) as doc:
-            pages = doc.page_count
-            gaps = _unembedded_font_names(doc)
-    except Exception as exc:
-        _remove_quietly(dst)
-        raise WordConvertError(f"转换结果不是有效 PDF：{exc}")
-    if pages <= 0:
-        _remove_quietly(dst)
-        raise WordConvertError("Word 转换失败：生成的 PDF 没有页面。")
     info = {"converter": converter or "Word", "pages": pages,
             "font_check": "checked" if font_summary.get("checked") else "unavailable"}
     missing = [str(item).strip() for item in (font_summary.get("missing") or [])
